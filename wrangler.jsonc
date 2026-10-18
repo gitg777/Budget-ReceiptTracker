@@ -15,8 +15,7 @@
     {
       "binding": "DB",
       "database_name": "budget-db",
-      // Fill in after `npx wrangler d1 create budget-db` (see docs/SETUP.md)
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "d016f1c1-288c-4d1e-9d49-e21d338e2ab9",
       "migrations_dir": "migrations"
     }
   ],

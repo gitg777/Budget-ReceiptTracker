@@ -13,17 +13,9 @@ npx wrangler login
 
 `wrangler login` opens a browser so you can approve access to your Cloudflare account.
 
-## 2. Create the database
+## 2. Database — done
 
-```
-npx wrangler d1 create budget-db
-```
-
-The command prints a `database_id`. Paste it into `wrangler.jsonc`, replacing `REPLACE_WITH_D1_DATABASE_ID`. Then create the tables:
-
-```
-npm run migrate:remote
-```
+The `budget-db` database was created on 18 Oct 2026 (Western Europe) and its tables are in place; its id is already in `wrangler.jsonc`. Future table changes are applied with `npm run migrate:remote`.
 
 ## 3. Create the photo storage
 
