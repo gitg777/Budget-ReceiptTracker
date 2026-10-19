@@ -8,7 +8,7 @@ import {
   recordFailure, requireOwner, requireUser, startSession,
 } from './auth';
 import { extractReceipts, SUPPORTED_IMAGE_TYPES, type ExtractedReceipt } from './extract';
-import { refreshRates, suggestRate } from './rates';
+import { lastUsedRate, refreshRates, suggestRate } from './rates';
 import { canRead, chargeReading, creditStatus, grantStartingCredit } from './credit';
 import { applyInput, diff, InputError, type ItemRow, type ReceiptInput, type ReceiptRow } from './receipts';
 import { DEFAULT_CATEGORIES, COMMON_CURRENCIES, toCents, toUsdCents } from '../shared/money';
@@ -367,7 +367,14 @@ api.get('/receipts/:id', async (c) => {
     c.env.DB.prepare('SELECT display_name, role FROM users WHERE id = ?').bind(r.created_by).first<{ display_name: string; role: string }>(),
   ]);
   const suggestion = r.currency === 'USD' ? null : await suggestRate(c.env.DB, r.account_id, r.currency, r.receipt_date);
-  return c.json({ receipt: { ...r, created_by_name: creator?.display_name, created_by_role: creator?.role }, items, edits, rate_suggestion: suggestion });
+  const lastUsed = await lastUsedRate(c.env.DB, r.account_id, r.currency, r.id);
+  return c.json({
+    receipt: { ...r, created_by_name: creator?.display_name, created_by_role: creator?.role },
+    items,
+    edits,
+    rate_suggestion: suggestion,
+    last_used_rate: lastUsed,
+  });
 });
 
 api.post('/receipts', async (c) => {
@@ -464,10 +471,15 @@ api.get('/rates/today', async (c) => {
 });
 
 api.get('/rates/suggest', async (c) => {
+  // Going rate and last-used rate for a currency, for the rate choice on a receipt.
   const user = c.get('user');
   const currency = (c.req.query('currency') ?? 'USD').toUpperCase();
   const date = c.req.query('date') || null;
-  return c.json({ suggestion: await suggestRate(c.env.DB, user.account_id, currency, date) });
+  const exclude = Number(c.req.query('exclude')) || null;
+  return c.json({
+    suggestion: await suggestRate(c.env.DB, user.account_id, currency, date),
+    last_used: await lastUsedRate(c.env.DB, user.account_id, currency, exclude),
+  });
 });
 
 api.post('/rates', requireOwner, async (c) => {

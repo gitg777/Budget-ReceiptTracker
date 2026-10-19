@@ -77,17 +77,19 @@ check('helper can view own photo', r.status === 200 || r.data === null);
 r = await helper('/receipts', { body: { upload_id: uploadId } });
 const rid = r.data.id;
 r = await helper(`/rates/suggest?currency=ZWG&date=${today}`);
-check('suggested rate is the owner rate', r.data.suggestion?.rate_per_usd === 26.6, r.data);
+check('no going rate yet and no previous ZWG receipt', r.data.suggestion === null && r.data.last_used === null, r.data);
 r = await helper(`/receipts/${rid}`, {
   method: 'PUT',
-  body: { merchant: 'Greenvale', receipt_date: today, currency: 'ZWG', total: 532, rate_per_usd: 26.6, rate_source: 'auto', category_id: cat.Groceries,
+  body: { merchant: 'Greenvale', receipt_date: today, currency: 'ZWG', total: 532, rate_per_usd: 26.6, rate_source: 'manual', category_id: cat.Groceries,
     paid_by: 'float', items: [{ name: 'Bread, white loaf', amount: 266, category_id: cat.Groceries }, { name: 'Milk, fresh, 2L', amount: 266 }], save: true },
 });
 check('helper saves ZWG receipt', r.status === 200 && r.data.status === 'saved', r.data);
 r = await helper(`/receipts/${rid}`);
 check('hand-typed receipt on an unread photo has no audit entry yet', r.data.edits.length === 0, r.data.edits);
 check('ZWG 532 @ 26.6 = $20.00', r.data.receipt.total_usd_cents === 2000, r.data.receipt);
-check('rate stored on receipt', r.data.receipt.rate_per_usd === 26.6 && r.data.receipt.rate_source === 'auto');
+check('rate stored on receipt', r.data.receipt.rate_per_usd === 26.6 && r.data.receipt.rate_source === 'manual');
+r = await helper(`/rates/suggest?currency=ZWG&date=${today}&exclude=0`);
+check('next ZWG receipt offers 26.6 as the last used rate', r.data.last_used?.rate_per_usd === 26.6, r.data);
 
 r = await helper('/receipts', { body: {} });
 const rid2 = r.data.id;

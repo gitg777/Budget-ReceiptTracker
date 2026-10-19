@@ -53,9 +53,18 @@ interface Loaded {
   items: Array<{ raw_text: string | null; name: string; quantity: number | null; amount_cents: number; category_id: number | null }>;
   edits: Edit[];
   rate_suggestion: RateSuggestion | null;
+  last_used_rate: LastUsed | null;
 }
 
-type RateChoice = 'auto' | 'receipt' | 'manual';
+interface LastUsed {
+  rate_per_usd: number;
+  receipt_date: string | null;
+  merchant: string | null;
+}
+
+// Every receipt picks its own rate: the going (automatic) rate, the rate used on the last
+// receipt in this currency, the rate printed on the receipt, or a new rate typed in.
+type RateChoice = 'auto' | 'last' | 'receipt' | 'manual';
 
 export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) => void }) {
   const [data, setData] = useState<Loaded | null>(null);
@@ -73,6 +82,7 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
   const [rateChoice, setRateChoice] = useState<RateChoice>('auto');
   const [manualRate, setManualRate] = useState('');
   const [suggestion, setSuggestion] = useState<RateSuggestion | null>(null);
+  const [lastUsed, setLastUsed] = useState<LastUsed | null>(null);
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -93,10 +103,13 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
       setNotes(r.notes ?? '');
       setItems(d.items.map((it) => ({ ...it, amount: String(fromCents(it.amount_cents)) })));
       setSuggestion(d.rate_suggestion);
+      setLastUsed(d.last_used_rate);
       if (r.rate_source === 'manual') {
+        // A saved receipt keeps exactly the rate it was saved with.
         setRateChoice('manual');
         setManualRate(String(r.rate_per_usd));
       } else if (r.rate_source === 'receipt') setRateChoice('receipt');
+      else if (r.status === 'draft' && d.last_used_rate) setRateChoice('last'); // new receipt: default to the rate used last time
       else setRateChoice('auto');
     }, (e) => setError(e.message));
   }, [id]);
@@ -104,15 +117,19 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
   // When the currency or date changes, look up the rate of the day again.
   useEffect(() => {
     if (!data || currency === 'USD' || !/^[A-Z]{3}$/.test(currency)) return;
-    api<{ suggestion: RateSuggestion | null }>(`/rates/suggest?currency=${currency}&date=${date}`).then((s) => setSuggestion(s.suggestion), () => undefined);
+    api<{ suggestion: RateSuggestion | null; last_used: LastUsed | null }>(`/rates/suggest?currency=${currency}&date=${date}&exclude=${id}`).then((s) => {
+      setSuggestion(s.suggestion);
+      setLastUsed(s.last_used);
+    }, () => undefined);
   }, [currency, date, data]);
 
   const rate = useMemo(() => {
     if (currency === 'USD') return 1;
     if (rateChoice === 'manual') return Number(manualRate) || 0;
     if (rateChoice === 'receipt') return data?.receipt.printed_rate ?? 0;
+    if (rateChoice === 'last') return lastUsed?.rate_per_usd ?? 0;
     return suggestion?.rate_per_usd ?? 0;
-  }, [currency, rateChoice, manualRate, suggestion, data]);
+  }, [currency, rateChoice, manualRate, suggestion, lastUsed, data]);
 
   const totalCents = toCents(total);
   const itemsCents = items.reduce((s, it) => s + toCents(it.amount), 0);
@@ -141,7 +158,7 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
           currency,
           total: totalCents / 100,
           rate_per_usd: rate,
-          rate_source: currency === 'USD' ? 'usd' : rateChoice,
+          rate_source: currency === 'USD' ? 'usd' : rateChoice === 'last' ? 'manual' : rateChoice,
           rate_date: currency === 'USD' ? date : rateChoice === 'auto' ? suggestion?.rate_date ?? null : date,
           category_id: categoryId,
           payment_method: paymentMethod || null,
@@ -232,9 +249,9 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
               <span>
                 {suggestion ? (
                   <>
-                    Rate of the day: <b>{suggestion.rate_per_usd.toFixed(4)}</b>
+                    Going rate: <b>{suggestion.rate_per_usd.toFixed(4)}</b>
                     <span className="block text-xs text-stone-500">
-                      {suggestion.source === 'manual' ? 'Your own rate' : 'Automatic'} · {formatDate(suggestion.rate_date)}
+                      Automatic · {formatDate(suggestion.rate_date)}
                       {suggestion.rate_date !== date && date && ' (closest available)'}
                     </span>
                   </>
@@ -243,6 +260,17 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
                 )}
               </span>
             </label>
+            {lastUsed && (
+              <label className="flex items-start gap-2 font-normal">
+                <input type="radio" className="mt-1 w-auto" checked={rateChoice === 'last'} onChange={() => setRateChoice('last')} disabled={locked} />
+                <span>
+                  Last used rate: <b>{lastUsed.rate_per_usd}</b>
+                  <span className="block text-xs text-stone-500">
+                    {lastUsed.merchant ?? 'Previous receipt'} · {formatDate(lastUsed.receipt_date)}
+                  </span>
+                </span>
+              </label>
+            )}
             {r.printed_rate && (
               <label className="flex items-start gap-2 font-normal">
                 <input type="radio" className="mt-1 w-auto" checked={rateChoice === 'receipt'} onChange={() => setRateChoice('receipt')} disabled={locked} />
@@ -251,7 +279,7 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
             )}
             <label className="flex items-center gap-2 font-normal">
               <input type="radio" className="w-auto" checked={rateChoice === 'manual'} onChange={() => setRateChoice('manual')} disabled={locked} />
-              <span className="shrink-0">My own rate:</span>
+              <span className="shrink-0">New rate:</span>
               <input inputMode="decimal" value={manualRate} placeholder="e.g. 26.5" onFocus={() => setRateChoice('manual')} onChange={(e) => setManualRate(e.target.value)} disabled={locked} />
             </label>
             <p className="text-sm">

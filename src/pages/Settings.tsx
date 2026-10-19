@@ -36,27 +36,12 @@ interface RateRow {
 
 function Rates({ me }: { me: Me }) {
   const [auto, setAuto] = useState<RateRow[]>([]);
-  const [manual, setManual] = useState<RateRow[]>([]);
-  const [f, setF] = useState({ currency: 'ZWG', rate: '', date: me.today });
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
-  const load = () => api<{ auto: RateRow[]; manual: RateRow[] }>('/rates/today').then((d) => { setAuto(d.auto); setManual(d.manual); }, () => undefined);
+  const load = () => api<{ auto: RateRow[] }>('/rates/today').then((d) => setAuto(d.auto), () => undefined);
   useEffect(() => {
     load();
   }, []);
-
-  const save = async (e: FormEvent) => {
-    e.preventDefault();
-    setError('');
-    try {
-      await api('/rates', { body: { currency: f.currency, rate: Number(f.rate), date: f.date } });
-      setF({ ...f, rate: '' });
-      setMsg('Saved. New receipts in that currency on that day will suggest your rate.');
-      load();
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
 
   const refresh = async () => {
     setError('');
@@ -89,24 +74,9 @@ function Rates({ me }: { me: Me }) {
         Automatic rates come from a free public feed and follow the official interbank rate closely, but are not published by the RBZ. Set your own rate below if you use a different one.
       </p>
       <Button variant="secondary" onClick={refresh}>Fetch now</Button>
-      <form onSubmit={save} className="space-y-2 border-t border-stone-100 pt-3">
-        <p className="text-sm font-medium">Set my own rate for a day</p>
-        <div className="grid grid-cols-3 gap-2">
-          <select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}>
-            {me.currencies.filter((c) => c !== 'USD').map((c) => <option key={c}>{c}</option>)}
-          </select>
-          <input inputMode="decimal" placeholder="Rate" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value })} />
-          <input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} />
-        </div>
-        <Button className="w-full">Save my rate</Button>
-      </form>
-      {manual.length > 0 && (
-        <ul className="text-sm text-stone-600">
-          {manual.map((r, i) => (
-            <li key={i}>{formatDate(r.rate_date)}: {r.currency} {r.rate_per_usd}</li>
-          ))}
-        </ul>
-      )}
+      <p className="text-xs text-stone-500">
+        These are only the going rates. Each receipt chooses its own rate when you save it: the going rate, the rate you used last time, the rate printed on the receipt, or a new rate.
+      </p>
       {msg && <Notice tone="good">{msg}</Notice>}
       <ErrorText>{error}</ErrorText>
     </Card>

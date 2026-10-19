@@ -100,17 +100,12 @@ export interface RateChoice {
 }
 
 /**
- * The rate to suggest for a receipt: the owner's own rate for that day if they set one,
- * otherwise the latest automatic rate on or before the receipt date, otherwise the nearest after it.
+ * The going rate for a receipt: the latest automatic rate on or before the receipt date,
+ * otherwise the nearest one after it. (The rate actually used is chosen on each receipt.)
  */
-export async function suggestRate(db: D1Database, accountId: number, currency: string, date: string | null): Promise<RateChoice | null> {
+export async function suggestRate(db: D1Database, _accountId: number, currency: string, date: string | null): Promise<RateChoice | null> {
   if (currency === 'USD') return { rate_per_usd: 1, rate_date: date ?? '', source: 'auto', provider: null };
   const day = date ?? new Date().toISOString().slice(0, 10);
-  const manual = await db
-    .prepare("SELECT rate_per_usd, rate_date, source, provider FROM exchange_rates WHERE account_id = ? AND currency = ? AND source = 'manual' AND rate_date <= ? ORDER BY rate_date DESC LIMIT 1")
-    .bind(accountId, currency, day)
-    .first<RateChoice>();
-  if (manual && manual.rate_date === day) return manual;
   const before = await db
     .prepare("SELECT rate_per_usd, rate_date, source, provider FROM exchange_rates WHERE account_id IS NULL AND currency = ? AND rate_date <= ? ORDER BY rate_date DESC LIMIT 1")
     .bind(currency, day)
@@ -120,4 +115,24 @@ export async function suggestRate(db: D1Database, accountId: number, currency: s
     .prepare("SELECT rate_per_usd, rate_date, source, provider FROM exchange_rates WHERE account_id IS NULL AND currency = ? ORDER BY rate_date ASC LIMIT 1")
     .bind(currency)
     .first<RateChoice>();
+}
+
+export interface LastUsedRate {
+  rate_per_usd: number;
+  rate_source: string;
+  receipt_date: string | null;
+  merchant: string | null;
+}
+
+/** The rate on the most recently saved receipt in this currency, so the same rate can be reused. */
+export async function lastUsedRate(db: D1Database, accountId: number, currency: string, excludeReceiptId: number | null): Promise<LastUsedRate | null> {
+  if (currency === 'USD') return null;
+  return db
+    .prepare(
+      `SELECT rate_per_usd, rate_source, receipt_date, merchant FROM receipts
+        WHERE account_id = ? AND currency = ? AND status = 'saved' AND rate_per_usd > 0 AND id <> ?
+        ORDER BY updated_at DESC LIMIT 1`,
+    )
+    .bind(accountId, currency, excludeReceiptId ?? 0)
+    .first<LastUsedRate>();
 }
