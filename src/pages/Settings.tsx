@@ -4,6 +4,7 @@ import { fromCents } from '../../shared/money';
 import { Button, Card, ErrorText, Notice, PageTitle, formatDate } from '../ui';
 import { formatCredit, receiptsFor } from '../../shared/pricing';
 import { getTheme, setTheme, type ThemeChoice } from '../theme';
+import { Contact } from './Home';
 
 export function Settings({ me, onChange, logout }: { me: Me; onChange: () => void; logout: () => void }) {
   const isOwner = me.user.role === 'owner';
@@ -262,7 +263,7 @@ function Credit({ me }: { me: Me }) {
         About {receiptsFor(c.balance_micros, c.per_receipt_micros).toLocaleString()} receipts left. Reading costs about {formatCredit(c.per_receipt_micros * 100)} per 100 receipts. Typing a receipt in by hand is always free.
       </p>
       <div>
-        <p className="mb-1 text-sm font-medium">Top up — contact {c.contact}</p>
+        <p className="mb-1 text-sm font-medium">Top up — contact <Contact c={c} /></p>
         <ul className="grid grid-cols-2 gap-2 text-sm">
           {c.packs_usd.map((usd) => (
             <li key={usd} className="rounded-lg border border-stone-200 px-3 py-2">

@@ -29,8 +29,10 @@
     // Users pay Anthropic's cost times this number for each reading
     "MARKUP": "20",
     // Free reading credit for every new account, in USD
-    "FREE_CREDIT_USD": "5"
-    // SUPPORT_CONTACT: who people contact to top up (shown in the app). Not set yet.
+    "FREE_CREDIT_USD": "5",
+    // Who people contact to top up, and the tap-to-chat link shown with it
+    "SUPPORT_CONTACT": "WhatsApp 0772 327 459",
+    "SUPPORT_LINK": "https://wa.me/263772327459"
   }
   // Secret (not in this file): ANTHROPIC_API_KEY — set with `npx wrangler secret put ANTHROPIC_API_KEY`
 }

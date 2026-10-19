@@ -12,6 +12,8 @@ export interface Env {
   FREE_CREDIT_USD?: string;
   /** Shown to people who run out of credit, e.g. a WhatsApp number. */
   SUPPORT_CONTACT?: string;
+  /** Optional link for the contact, e.g. https://wa.me/263… */
+  SUPPORT_LINK?: string;
 }
 
 export interface SessionUser {

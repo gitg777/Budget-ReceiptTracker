@@ -52,4 +52,5 @@ export interface CreditStatus {
   per_receipt_micros: number;
   packs_usd: number[];
   contact: string;
+  contact_link: string | null;
 }

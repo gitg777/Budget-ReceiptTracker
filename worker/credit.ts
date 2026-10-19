@@ -66,5 +66,6 @@ export async function creditStatus(env: Env, accountId: number) {
     per_receipt_micros: await perReceiptMicros(env, accountId),
     packs_usd: TOPUP_PACKS_USD,
     contact: env.SUPPORT_CONTACT || 'the app administrator',
+    contact_link: env.SUPPORT_LINK || null,
   };
 }

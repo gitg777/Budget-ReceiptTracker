@@ -4,6 +4,7 @@ import { compressImage } from '../image';
 import { addToQueue, listQueue, onQueueChange, processQueue, removeFromQueue, retryItem, type QueuedPhoto } from '../queue';
 import { Button, Card, ErrorText, Money, Notice, PageTitle, formatDate, Bar } from '../ui';
 import { formatCredit, receiptsFor } from '../../shared/pricing';
+import type { CreditStatus } from '../api';
 
 interface DraftRow {
   id: number;
@@ -243,14 +244,14 @@ function CreditLine({ me }: { me: Me }) {
   if (c.balance_micros <= 0) {
     return (
       <Notice tone="warn">
-        Reading credit is used up, so photos can't be read automatically. {owner ? `Contact ${c.contact} to top up.` : 'Ask the owner to top up.'} You can still type receipts in by hand.
+        Reading credit is used up, so photos can't be read automatically. {owner ? <>Contact <Contact c={c} /> to top up.</> : 'Ask the owner to top up.'} You can still type receipts in by hand.
       </Notice>
     );
   }
   if (left < 20) {
     return (
       <Notice tone="warn">
-        Reading credit is running low: about {left} receipt{left === 1 ? '' : 's'} left. {owner ? `Contact ${c.contact} to top up.` : 'Let the owner know.'}
+        Reading credit is running low: about {left} receipt{left === 1 ? '' : 's'} left. {owner ? <>Contact <Contact c={c} /> to top up.</> : 'Let the owner know.'}
       </Notice>
     );
   }
@@ -259,5 +260,15 @@ function CreditLine({ me }: { me: Me }) {
     <a href="#/settings" className="block text-sm text-stone-600">
       Reading credit: <b>{formatCredit(c.balance_micros)}</b> · about {left.toLocaleString()} receipts
     </a>
+  );
+}
+
+export function Contact({ c }: { c: CreditStatus }) {
+  return c.contact_link ? (
+    <a href={c.contact_link} target="_blank" rel="noreferrer" className="font-medium underline">
+      {c.contact}
+    </a>
+  ) : (
+    <b>{c.contact}</b>
   );
 }
