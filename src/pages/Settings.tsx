@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, type Me } from '../api';
 import { fromCents } from '../../shared/money';
-import { Button, Card, ErrorText, Notice, PageTitle, formatDate } from '../ui';
+import { Button, Card, ErrorText, Notice, PageTitle, ThemeSwitch, formatDate } from '../ui';
+import { ChatIcon, HelpIcon } from '../icons';
 import { formatCredit, receiptsFor } from '../../shared/pricing';
-import { getTheme, setTheme, type ThemeChoice } from '../theme';
 import { Contact } from './Home';
 
 export function Settings({ me, onChange, logout }: { me: Me; onChange: () => void; logout: () => void }) {
@@ -11,9 +11,17 @@ export function Settings({ me, onChange, logout }: { me: Me; onChange: () => voi
   return (
     <div className="space-y-4">
       <PageTitle>More</PageTitle>
+      <div className="grid grid-cols-2 gap-2.5">
+        <a href="#/help" className="flex min-h-14 items-center gap-2.5 rounded-[18px] border border-line bg-surface px-4 font-semibold text-ink">
+          <HelpIcon className="text-brand" /> How it works
+        </a>
+        <a href="#/feedback" className="flex min-h-14 items-center gap-2.5 rounded-[18px] border border-line bg-surface px-4 font-semibold text-ink">
+          <ChatIcon className="text-brand" /> Send feedback
+        </a>
+      </div>
       {me.user.is_admin === 1 && (
         <a href="#/admin" className="block">
-          <Notice>Operator: accounts, credit and top-ups →</Notice>
+          <Notice>Operator: accounts, credit, top-ups and feedback →</Notice>
         </a>
       )}
       {isOwner && <Credit me={me} />}
@@ -236,7 +244,7 @@ function Credit({ me }: { me: Me }) {
         <p className="mb-1 text-sm font-medium">Top up — contact <Contact c={c} /></p>
         <ul className="grid grid-cols-2 gap-2 text-sm">
           {c.packs_usd.map((usd) => (
-            <li key={usd} className="rounded-lg border border-stone-200 px-3 py-2">
+            <li key={usd} className="rounded-[14px] border border-line px-3 py-2">
               <b>${usd}</b> ≈ {receiptsFor(usd * 1_000_000, c.per_receipt_micros).toLocaleString()} receipts
             </li>
           ))}
@@ -259,29 +267,10 @@ function Credit({ me }: { me: Me }) {
 }
 
 function Appearance() {
-  const [choice, setChoice] = useState<ThemeChoice>(getTheme);
-  const options: Array<[ThemeChoice, string]> = [
-    ['system', 'Same as phone'],
-    ['light', 'Light'],
-    ['dark', 'Dark'],
-  ];
   return (
     <Card>
-      <h2 className="mb-2 font-semibold">Appearance</h2>
-      <div className="grid grid-cols-3 gap-2">
-        {options.map(([value, label]) => (
-          <Button
-            key={value}
-            variant={choice === value ? 'primary' : 'secondary'}
-            onClick={() => {
-              setTheme(value);
-              setChoice(value);
-            }}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
+      <h2 className="mb-2 font-semibold">Look</h2>
+      <ThemeSwitch />
     </Card>
   );
 }

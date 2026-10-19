@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { Button, Card, ErrorText } from '../ui';
+import { GitgMark, MatoboHero } from '../art';
 
 export function Login({ onDone }: { onDone: () => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -25,9 +26,16 @@ export function Login({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center p-4">
-      <h1 className="mb-1 text-center text-2xl font-semibold text-teal-800">Receipts & Budget</h1>
-      <p className="mb-6 text-center text-stone-500">Photograph receipts. See where the money goes.</p>
+    <div className="mx-auto flex min-h-dvh max-w-sm flex-col">
+      <section className="relative h-52 overflow-hidden bg-band text-on-band">
+        <MatoboHero className="absolute inset-0 h-full w-full" />
+        <div className="relative flex flex-col gap-2 px-5 pt-6">
+          <GitgMark size={40} />
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-on-band">Receipts &amp; Budget</h1>
+          <p className="max-w-[55%] text-sm text-[#d3ddd5]">Photograph receipts. See where the money goes.</p>
+        </div>
+      </section>
+      <div className="flex flex-1 flex-col px-4 pb-6">
       <Card>
         <form onSubmit={submit} className="space-y-3">
           {mode === 'login' ? (
@@ -66,15 +74,16 @@ export function Login({ onDone }: { onDone: () => void }) {
             </>
           )}
           <ErrorText>{error}</ErrorText>
-          <Button className="w-full" disabled={busy}>
+          <Button variant="gold" className="min-h-13 w-full" disabled={busy}>
             {busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create owner account'}
           </Button>
         </form>
       </Card>
-      <button className="mt-4 text-sm text-teal-800 underline" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
+      <button className="mt-4 min-h-11 text-sm font-semibold text-brand underline" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
         {mode === 'login' ? 'New here? Create an owner account' : 'Already have an account? Log in'}
       </button>
-      <p className="mt-2 text-center text-xs text-stone-500">Helpers: ask the owner for your username and PIN.</p>
+      <p className="mt-2 text-center text-xs text-muted">Helpers: ask the owner for your username and PIN.</p>
+      </div>
     </div>
   );
 }

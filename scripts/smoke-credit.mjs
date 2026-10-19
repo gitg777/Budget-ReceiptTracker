@@ -15,11 +15,13 @@ const sql = (q) => execSync(`npx wrangler d1 execute budget-db --local --command
 function client() {
   let cookie = '';
   return async (path, { method, body, form } = {}) => {
-    const res = await fetch(BASE + '/api' + path, {
+    const send = () => fetch(BASE + '/api' + path, {
       method: method ?? (body || form ? 'POST' : 'GET'),
       headers: { ...(cookie ? { cookie } : {}), ...(body ? { 'content-type': 'application/json' } : {}) },
       body: form ?? (body ? JSON.stringify(body) : undefined),
     });
+    // The local server can drop one connection right after the test edits its database directly.
+    const res = await send().catch(() => new Promise((ok) => setTimeout(ok, 1500)).then(send));
     const set = res.headers.get('set-cookie');
     if (set) cookie = set.split(';')[0];
     let data = null;

@@ -1,11 +1,18 @@
 // Offline upload queue. Photos are saved on the phone (IndexedDB) first, then sent when there is signal.
-// Each photo gets a client_id so a retry after a dropped connection never creates a duplicate.
+// Each entry gets a client_id so a retry after a dropped connection never creates a duplicate.
+// One entry = one receipt; a long receipt is one entry with several photos (parts, top to bottom).
+// Files shared into the app from WhatsApp etc. are added by the service worker (public/sw.js) in the same shape.
 
 import { api, ApiError, isNetworkError } from './api';
 
+export type ReadMode = 'full' | 'totals';
+
 export interface QueuedPhoto {
   client_id: string;
-  blob: Blob;
+  blobs?: Blob[];
+  /** Older entries (before long receipts) held one photo here. */
+  blob?: Blob;
+  mode?: ReadMode;
   name: string;
   created_at: string;
   state: 'waiting' | 'sending' | 'error';
@@ -58,8 +65,11 @@ export function onQueueChange(fn: () => void): () => void {
 }
 const notify = () => listeners.forEach((fn) => fn());
 
-export async function addToQueue(blob: Blob, name: string): Promise<void> {
-  await putItem({ client_id: newId(), blob, name, created_at: new Date().toISOString(), state: 'waiting' });
+export const partsOf = (q: QueuedPhoto): Blob[] => q.blobs ?? (q.blob ? [q.blob] : []);
+
+export async function addToQueue(blobs: Blob | Blob[], name: string, mode: ReadMode = 'full'): Promise<void> {
+  const list = Array.isArray(blobs) ? blobs : [blobs];
+  await putItem({ client_id: newId(), blobs: list, mode, name, created_at: new Date().toISOString(), state: 'waiting' });
   notify();
   // Ask the browser not to clear our storage when the phone is low on space.
   navigator.storage?.persist?.().catch(() => undefined);
@@ -76,8 +86,9 @@ export async function processQueue(): Promise<UploadResult[]> {
       await putItem({ ...item, state: 'sending' });
       notify();
       const form = new FormData();
-      form.append('file', item.blob, item.name);
+      partsOf(item).forEach((b, i) => form.append('file', b, partsOf(item).length > 1 ? `part${i + 1}-${item.name}` : item.name));
       form.append('client_id', item.client_id);
+      form.append('mode', item.mode ?? 'full');
       try {
         results.push(await api<UploadResult>('/uploads', { form }));
         await removeFromQueue(item.client_id);

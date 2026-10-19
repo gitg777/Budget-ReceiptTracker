@@ -9,6 +9,12 @@ Setup and publishing: **[docs/SETUP.md](docs/SETUP.md)**.
 | | Owner | Helper |
 |---|---|---|
 | Photograph / upload receipts (works with no signal) | ✓ | ✓ |
+| Long receipts: several photos read as one, with an overlap guide on the camera | ✓ | ✓ |
+| "Totals only" for very long slips (shop, date, total) | ✓ | ✓ |
+| PDFs, screenshots and e-receipts; Android "Share → Budget" | ✓ | ✓ |
+| Warning when the lines don't add up to the total, with "Add the missing photo" | ✓ | ✓ |
+| How-it-works guide and in-app feedback | ✓ | ✓ |
+| Day / Night / Same as phone (on Home) | ✓ | ✓ |
 | Check and correct what was read, then save | ✓ | ✓ (changes are recorded with name and reason) |
 | See own receipts | ✓ | ✓ |
 | Allowance left, cash in hand, money owed back | — | ✓ |
@@ -17,7 +23,8 @@ Setup and publishing: **[docs/SETUP.md](docs/SETUP.md)**.
 | "How much on milk?" search by item or shop | ✓ | — |
 | Excel download (receipts, items, change history) | ✓ | — |
 | Add helpers, set allowances, record cash given, pay back own-money receipts | ✓ | — |
-| Exchange rates: automatic daily + own rate | ✓ | uses the owner's |
+| Exchange rate chosen per receipt: going, last used, printed, or new | ✓ | ✓ |
+| Operator screen: all accounts, credit top-ups, feedback inbox | operator only | — |
 
 ## How it is built, and why
 
@@ -76,12 +83,32 @@ The app tracks two separate things.
 - **Sonnet 5.5** is $2 / $10 per million, about 20× Haiku.
 - **Not verified:** that your account holds $100 of credit. Please check it in the Anthropic Console.
 
+## Long receipts, and why the photos are not stitched together
+
+A slip too long for one photo is taken in parts, top to bottom (up to 6). After each photo, the bottom
+fifth of it is shown faintly at the top of the camera so the next photo overlaps it. All parts go to
+Claude in **one request** with an instruction that they are one receipt and the overlap is counted once.
+
+They are not stitched into one tall picture because Claude scales large images down before reading
+them; a tall strip would arrive smaller and blurrier than the separate photos. Cost grows roughly with
+the number of photos.
+
+On Check and save, if the lines do not add up to the printed total, a warning offers **Add the missing
+photo**: the extra photo joins the others and everything is read again (only while the receipt is a draft).
+
+## Look (GITG style kit)
+
+Colours, fonts and the Matobo rock art follow the GITG design system shared by all GITG apps
+(https://claude.ai/artifact/6VuCEo1y4uyyQ3WjmSPbxY). The colours live in `src/index.css`; Tailwind's
+stone/teal/amber scales are remapped onto them, so screens pick up Day and Night without per-page work.
+Fonts (Bricolage Grotesque, Instrument Sans) are bundled, not fetched, so they work offline.
+
 ## Project layout
 
 ```
 worker/       API (Cloudflare Worker): login, receipts, Claude reading, rates, helpers, reports
 shared/       money and allowance arithmetic used by both sides
-src/          the phone app (React)
+src/          the phone app (React); src/art.tsx brand art, src/icons.tsx icons
 migrations/   database tables
 scripts/      end-to-end checks, receipt-reading test, icon generator
 tests/        unit tests (npm test)

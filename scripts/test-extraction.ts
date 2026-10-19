@@ -34,7 +34,7 @@ for (const name of readdirSync(dir).sort()) {
   const started = Date.now();
   try {
     const bytes = readFileSync(path);
-    const r = await extractReceipts({ apiKey, model, bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), mime, categories: [...DEFAULT_CATEGORIES] });
+    const r = await extractReceipts({ apiKey, model, files: [{ bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), mime }], categories: [...DEFAULT_CATEGORIES] });
     inTok += r.input_tokens;
     outTok += r.output_tokens;
     console.log(`\n${name}  (${((Date.now() - started) / 1000).toFixed(1)}s, ${r.receipts.length} receipt(s))`);

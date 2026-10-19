@@ -9,6 +9,11 @@ import { Helpers } from './pages/Helpers';
 import { Settings } from './pages/Settings';
 import { CashUp } from './pages/CashUp';
 import { Admin } from './pages/Admin';
+import { Capture } from './pages/Capture';
+import { Help } from './pages/Help';
+import { Feedback } from './pages/Feedback';
+import { GitgMark } from './art';
+import { CashIcon, ChartIcon, HomeIcon, MoreIcon, PeopleIcon, ReceiptIcon } from './icons';
 
 const ME_KEY = 'budget-me';
 
@@ -65,7 +70,7 @@ export function App() {
   }, [refreshMe]);
 
   if (!me) {
-    if (!checked) return <div className="p-8 text-center text-stone-500">Loading…</div>;
+    if (!checked) return <div className="p-8 text-center text-muted">Loading…</div>;
     return <Login onDone={refreshMe} />;
   }
 
@@ -102,6 +107,15 @@ export function App() {
     case 'admin':
       content = me.user.is_admin ? <Admin /> : null;
       break;
+    case 'capture':
+      content = <Capture go={go} />;
+      break;
+    case 'help':
+      content = <Help me={me} />;
+      break;
+    case 'feedback':
+      content = <Feedback me={me} />;
+      break;
     case 'cashup':
       content = !isOwner ? <CashUp go={go} /> : null;
       break;
@@ -109,42 +123,54 @@ export function App() {
       content = <Home me={me} go={go} online={online} onCreditChange={refreshMe} />;
   }
 
-  const tabs = isOwner
+  const tabs: Array<[string, string, typeof HomeIcon]> = isOwner
     ? [
-        ['home', 'Capture'],
-        ['receipts', 'Receipts'],
-        ['reports', 'Reports'],
-        ['helpers', 'Helpers'],
-        ['settings', 'More'],
+        ['home', 'Home', HomeIcon],
+        ['receipts', 'Receipts', ReceiptIcon],
+        ['reports', 'Reports', ChartIcon],
+        ['helpers', 'Helpers', PeopleIcon],
+        ['settings', 'More', MoreIcon],
       ]
     : [
-        ['home', 'Capture'],
-        ['receipts', 'My receipts'],
-        ['cashup', 'Cash-up'],
-        ['settings', 'More'],
+        ['home', 'Home', HomeIcon],
+        ['receipts', 'My receipts', ReceiptIcon],
+        ['cashup', 'Cash-up', CashIcon],
+        ['settings', 'More', MoreIcon],
       ];
+  // Which tab a screen belongs to.
+  const activeTab = page === 'review' || page === 'capture' ? 'home' : page === 'help' || page === 'feedback' || page === 'admin' ? 'settings' : page;
+  // Capture is a full-screen camera: no header or tabs.
+  if (page === 'capture') return <div className="mx-auto min-h-dvh max-w-2xl">{content}</div>;
 
   return (
     <div className="mx-auto min-h-dvh max-w-2xl pb-24">
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-200 bg-surface/95 px-4 py-3 backdrop-blur">
-        <span className="font-semibold text-teal-800">{me.user.account_name}</span>
-        <span className="text-sm text-stone-500">
+      <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-band px-5 py-3 text-on-band">
+        <a href="#/home" className="flex min-w-0 items-center gap-2.5">
+          <GitgMark />
+          <span className="truncate font-display text-[17px] font-semibold">{me.user.account_name}</span>
+        </a>
+        <span className="flex shrink-0 items-center gap-2 text-sm text-on-band-muted">
           {me.user.display_name}
-          {!online && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-amber-900">Offline</span>}
+          {!online && <span className="rounded-full bg-gold px-2.5 py-0.5 text-xs font-semibold text-on-gold">Offline</span>}
         </span>
       </header>
-      <main className="p-4">{content ?? <p>Not available.</p>}</main>
-      <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-stone-200 bg-surface pb-[env(safe-area-inset-bottom)]">
-        <div className="mx-auto flex max-w-2xl">
-          {tabs.map(([key, label]) => (
-            <a
-              key={key}
-              href={'#/' + key}
-              className={`flex-1 py-3 text-center text-sm font-medium ${page === key || (page === 'review' && key === 'home') ? 'text-teal-800' : 'text-stone-500'}`}
-            >
-              {label}
-            </a>
-          ))}
+      <main className={page === 'home' || page === '' ? '' : 'p-4'}>{content ?? <p className="p-4">Not available.</p>}</main>
+      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)]">
+        <div className="mx-auto flex max-w-2xl px-2">
+          {tabs.map(([key, label, Icon]) => {
+            const on = activeTab === key || (key === 'home' && !tabs.some(([k]) => k === activeTab));
+            return (
+              <a
+                key={key}
+                href={'#/' + key}
+                aria-current={on ? 'page' : undefined}
+                className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] ${on ? 'font-semibold text-brand' : 'text-muted'}`}
+              >
+                <Icon />
+                {label}
+              </a>
+            );
+          })}
         </div>
       </nav>
     </div>

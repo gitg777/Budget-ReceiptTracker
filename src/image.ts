@@ -3,7 +3,7 @@
 
 const MAX_SIDE = 2000;
 
-export async function compressImage(file: File): Promise<Blob> {
+export async function compressImage(file: Blob): Promise<Blob> {
   if (!file.type.startsWith('image/') || file.type === 'image/gif') return file;
   try {
     const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' } as ImageBitmapOptions);

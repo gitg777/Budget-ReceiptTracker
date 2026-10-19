@@ -14,10 +14,27 @@ const receipt = {
   }],
 };
 
+// GET /last tells a test what the app sent in its last request (how many photos, which instructions).
+let last = { images: 0, documents: 0, text: '' };
+
 createServer((req, res) => {
+  if (req.method === 'GET' && req.url === '/last') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify(last));
+  }
   let body = '';
   req.on('data', (c) => (body += c));
   req.on('end', () => {
+    try {
+      const content = JSON.parse(body).messages?.[0]?.content ?? [];
+      last = {
+        images: content.filter((b) => b.type === 'image').length,
+        documents: content.filter((b) => b.type === 'document').length,
+        text: content.filter((b) => b.type === 'text').map((b) => b.text).join('\n'),
+      };
+    } catch {
+      /* not JSON: leave last as it was */
+    }
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({
       id: 'msg_mock', type: 'message', role: 'assistant', model: 'claude-haiku-5-5',

@@ -7,7 +7,7 @@ import {
   checkSecret, clearFailures, endSession, lockedMinutes, newPasswordHash, nowIso, randomToken,
   recordFailure, requireOwner, requireUser, startSession,
 } from './auth';
-import { extractReceipts, SUPPORTED_IMAGE_TYPES, type ExtractedReceipt } from './extract';
+import { extractReceipts, SUPPORTED_IMAGE_TYPES, type ExtractedReceipt, type ExtractFile, type ReadMode } from './extract';
 import { lastUsedRate, refreshRates, suggestRate } from './rates';
 import { canRead, chargeReading, creditStatus, grantStartingCredit } from './credit';
 import { applyInput, diff, InputError, type ItemRow, type ReceiptInput, type ReceiptRow } from './receipts';
@@ -20,6 +20,8 @@ const app = new Hono<AppEnv>();
 const api = new Hono<AppEnv>();
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_PARTS = 6; // photos of one long receipt
+const MAX_TOTAL_BYTES = 24 * 1024 * 1024;
 const today = () => new Date(Date.now() + 2 * 3600000).toISOString().slice(0, 10); // Harare is UTC+2, no DST
 
 async function body<T>(c: Context<AppEnv>): Promise<Partial<T>> {
@@ -210,10 +212,47 @@ async function createDrafts(env: Env, user: SessionUser, uploadId: number, extra
   return ids;
 }
 
+interface UploadRow {
+  id: number;
+  user_id: number;
+  r2_key: string;
+  extra_keys: string | null;
+  mime: string;
+  mode: string;
+}
+
+/** Every R2 key of an upload, first part first. */
+function uploadKeys(u: Pick<UploadRow, 'r2_key' | 'extra_keys'>): string[] {
+  let extra: string[] = [];
+  try {
+    extra = u.extra_keys ? JSON.parse(u.extra_keys) : [];
+  } catch {
+    /* bad JSON: first part only */
+  }
+  return [u.r2_key, ...extra];
+}
+
+function checkFile(file: File): string | null {
+  if (!(SUPPORTED_IMAGE_TYPES as readonly string[]).includes(file.type) && file.type !== 'application/pdf') return 'Please upload a photo (JPEG/PNG), a screenshot or a PDF.';
+  if (file.size > MAX_UPLOAD_BYTES) return 'Each file must be smaller than 10 MB.';
+  return null;
+}
+
+async function storeFile(env: Env, accountId: number, file: File): Promise<string> {
+  const key = `${accountId}/${today().slice(0, 7)}/${randomToken(12)}${file.type === 'application/pdf' ? '.pdf' : ''}`;
+  await env.IMAGES.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+  return key;
+}
+
 async function runExtraction(env: Env, user: SessionUser, uploadId: number): Promise<{ ok: boolean; receipt_ids: number[]; error?: string }> {
-  const upload = await env.DB.prepare('SELECT * FROM uploads WHERE id = ?').bind(uploadId).first<{ r2_key: string; mime: string }>();
-  const obj = upload && (await env.IMAGES.get(upload.r2_key));
-  if (!upload || !obj) return { ok: false, receipt_ids: [], error: 'File not found.' };
+  const upload = await env.DB.prepare('SELECT * FROM uploads WHERE id = ?').bind(uploadId).first<UploadRow>();
+  if (!upload) return { ok: false, receipt_ids: [], error: 'File not found.' };
+  const files: ExtractFile[] = [];
+  for (const key of uploadKeys(upload)) {
+    const obj = await env.IMAGES.get(key);
+    if (!obj) return { ok: false, receipt_ids: [], error: 'File not found.' };
+    files.push({ bytes: await obj.arrayBuffer(), mime: obj.httpMetadata?.contentType || upload.mime });
+  }
   if (!env.ANTHROPIC_API_KEY) {
     await env.DB.prepare("UPDATE uploads SET status = 'failed', error = ? WHERE id = ?").bind('Receipt reading is not set up yet (no API key).', uploadId).run();
     return { ok: false, receipt_ids: [], error: 'Receipt reading is not set up yet. You can still enter the receipt by hand.' };
@@ -228,8 +267,8 @@ async function runExtraction(env: Env, user: SessionUser, uploadId: number): Pro
     const result = await extractReceipts({
       apiKey: env.ANTHROPIC_API_KEY,
       model: env.EXTRACT_MODEL || 'claude-haiku-5-5',
-      bytes: await obj.arrayBuffer(),
-      mime: upload.mime,
+      files,
+      mode: upload.mode === 'totals' ? 'totals' : 'full',
       categories: cats,
     });
     await env.DB.prepare("UPDATE uploads SET status = 'done', error = NULL, model = ?, input_tokens = ?, output_tokens = ?, raw_json = ? WHERE id = ?")
@@ -251,15 +290,18 @@ async function runExtraction(env: Env, user: SessionUser, uploadId: number): Pro
 api.post('/uploads', async (c) => {
   const user = c.get('user');
   const form = await c.req.formData();
-  const file = form.get('file');
+  // Several "file" fields = parts of one long receipt, top to bottom.
+  const files = form.getAll('file').filter((f): f is File => f instanceof File);
   const clientId = String(form.get('client_id') ?? '');
-  if (!(file instanceof File)) return c.json({ error: 'No file received.' }, 400);
+  const mode: ReadMode = form.get('mode') === 'totals' ? 'totals' : 'full';
+  if (!files.length) return c.json({ error: 'No file received.' }, 400);
+  if (files.length > MAX_PARTS) return c.json({ error: `At most ${MAX_PARTS} photos per receipt.` }, 400);
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(clientId)) return c.json({ error: 'Bad upload id.' }, 400);
-  const mime = file.type;
-  if (!(SUPPORTED_IMAGE_TYPES as readonly string[]).includes(mime) && mime !== 'application/pdf') {
-    return c.json({ error: 'Please upload a photo (JPEG/PNG) or a PDF.' }, 400);
+  for (const f of files) {
+    const bad = checkFile(f);
+    if (bad) return c.json({ error: bad }, 400);
   }
-  if (file.size > MAX_UPLOAD_BYTES) return c.json({ error: 'File is larger than 10 MB.' }, 400);
+  if (files.reduce((n, f) => n + f.size, 0) > MAX_TOTAL_BYTES) return c.json({ error: 'These photos are too large together. Use fewer parts.' }, 400);
 
   // Same client_id again = the phone retried after a dropped connection. Return what we already have.
   const existing = await c.env.DB.prepare('SELECT id, status, error FROM uploads WHERE client_id = ? AND user_id = ?').bind(clientId, user.id).first<{ id: number; status: string; error: string | null }>();
@@ -268,13 +310,36 @@ api.post('/uploads', async (c) => {
     return c.json({ upload_id: existing.id, ok: existing.status === 'done', receipt_ids: results.map((r) => r.id), error: existing.error ?? undefined });
   }
 
-  const key = `${user.account_id}/${today().slice(0, 7)}/${randomToken(12)}${mime === 'application/pdf' ? '.pdf' : ''}`;
-  await c.env.IMAGES.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: mime } });
-  const up = await c.env.DB.prepare("INSERT INTO uploads (account_id, user_id, client_id, r2_key, mime, status, created_at) VALUES (?, ?, ?, ?, ?, 'processing', ?) RETURNING id")
-    .bind(user.account_id, user.id, clientId, key, mime, nowIso())
+  const keys: string[] = [];
+  for (const f of files) keys.push(await storeFile(c.env, user.account_id, f));
+  const up = await c.env.DB.prepare(
+    "INSERT INTO uploads (account_id, user_id, client_id, r2_key, extra_keys, mime, mode, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'processing', ?) RETURNING id",
+  )
+    .bind(user.account_id, user.id, clientId, keys[0], keys.length > 1 ? JSON.stringify(keys.slice(1)) : null, files[0].type, mode, nowIso())
     .first<{ id: number }>();
   const result = await runExtraction(c.env, user, up!.id);
   return c.json({ upload_id: up!.id, ...result });
+});
+
+// A part was missed: add one more photo to an upload and read all parts again.
+// Only while its receipts are still drafts, so nothing already saved changes underneath anyone.
+api.post('/uploads/:id/parts', async (c) => {
+  const user = c.get('user');
+  const id = Number(c.req.param('id'));
+  const up = await c.env.DB.prepare('SELECT * FROM uploads WHERE id = ? AND account_id = ?').bind(id, user.account_id).first<UploadRow>();
+  if (!up || (user.role === 'helper' && up.user_id !== user.id)) return c.json({ error: 'Not found.' }, 404);
+  const saved = await c.env.DB.prepare("SELECT 1 FROM receipts WHERE upload_id = ? AND status = 'saved'").bind(id).first();
+  if (saved) return c.json({ error: 'This receipt is already saved. Fix the lines by hand instead.' }, 400);
+  const form = await c.req.formData();
+  const file = form.get('file');
+  if (!(file instanceof File)) return c.json({ error: 'No file received.' }, 400);
+  const bad = checkFile(file);
+  if (bad) return c.json({ error: bad }, 400);
+  const keys = uploadKeys(up);
+  if (keys.length >= MAX_PARTS) return c.json({ error: `At most ${MAX_PARTS} photos per receipt.` }, 400);
+  const key = await storeFile(c.env, user.account_id, file);
+  await c.env.DB.prepare("UPDATE uploads SET extra_keys = ?, status = 'processing' WHERE id = ?").bind(JSON.stringify([...keys.slice(1), key]), id).run();
+  return c.json({ upload_id: id, parts: keys.length + 1, ...(await runExtraction(c.env, user, id)) });
 });
 
 api.get('/uploads/failed', async (c) => {
@@ -292,11 +357,11 @@ api.get('/uploads/failed', async (c) => {
 api.delete('/uploads/:id', async (c) => {
   const user = c.get('user');
   const id = Number(c.req.param('id'));
-  const up = await c.env.DB.prepare('SELECT user_id, r2_key FROM uploads WHERE id = ? AND account_id = ?').bind(id, user.account_id).first<{ user_id: number; r2_key: string }>();
+  const up = await c.env.DB.prepare('SELECT user_id, r2_key, extra_keys FROM uploads WHERE id = ? AND account_id = ?').bind(id, user.account_id).first<UploadRow>();
   if (!up || (user.role === 'helper' && up.user_id !== user.id)) return c.json({ error: 'Not found.' }, 404);
   const linked = await c.env.DB.prepare('SELECT 1 FROM receipts WHERE upload_id = ?').bind(id).first();
   if (linked) return c.json({ error: 'This photo belongs to a receipt. Delete the receipt instead.' }, 400);
-  await c.env.IMAGES.delete(up.r2_key);
+  await c.env.IMAGES.delete(uploadKeys(up));
   await c.env.DB.prepare('DELETE FROM uploads WHERE id = ?').bind(id).run();
   return c.json({ ok: true });
 });
@@ -311,13 +376,14 @@ api.post('/uploads/:id/retry', async (c) => {
 
 api.get('/uploads/:id/file', async (c) => {
   const user = c.get('user');
-  const up = await c.env.DB.prepare('SELECT user_id, r2_key, mime FROM uploads WHERE id = ? AND account_id = ?')
+  const up = await c.env.DB.prepare('SELECT user_id, r2_key, extra_keys, mime FROM uploads WHERE id = ? AND account_id = ?')
     .bind(Number(c.req.param('id')), user.account_id)
-    .first<{ user_id: number; r2_key: string; mime: string }>();
+    .first<UploadRow>();
   if (!up || (user.role === 'helper' && up.user_id !== user.id)) return c.json({ error: 'Not found.' }, 404);
-  const obj = await c.env.IMAGES.get(up.r2_key);
+  const key = uploadKeys(up)[Number(c.req.query('part') ?? 0)];
+  const obj = key && (await c.env.IMAGES.get(key));
   if (!obj) return c.json({ error: 'File missing.' }, 404);
-  return new Response(obj.body, { headers: { 'content-type': up.mime, 'cache-control': 'private, max-age=86400' } });
+  return new Response(obj.body, { headers: { 'content-type': obj.httpMetadata?.contentType || up.mime, 'cache-control': 'private, max-age=86400' } });
 });
 
 // ---------------------------------------------------------------- receipts
@@ -368,8 +434,12 @@ api.get('/receipts/:id', async (c) => {
   ]);
   const suggestion = r.currency === 'USD' ? null : await suggestRate(c.env.DB, r.account_id, r.currency, r.receipt_date);
   const lastUsed = await lastUsedRate(c.env.DB, r.account_id, r.currency, r.id);
+  const upload = r.upload_id
+    ? await c.env.DB.prepare('SELECT r2_key, extra_keys, mime, mode FROM uploads WHERE id = ?').bind(r.upload_id).first<UploadRow>()
+    : null;
   return c.json({
     receipt: { ...r, created_by_name: creator?.display_name, created_by_role: creator?.role },
+    photo: upload ? { parts: uploadKeys(upload).length, mime: upload.mime, mode: upload.mode } : null,
     items,
     edits,
     rate_suggestion: suggestion,
@@ -820,6 +890,28 @@ api.get('/credit', requireOwner, async (c) => {
   return c.json({ ...(await creditStatus(c.env, user.account_id)), ledger: results });
 });
 
+// ---------------------------------------------------------------- feedback
+
+const FEEDBACK_KINDS = ['problem', 'idea', 'question', 'praise'];
+
+api.post('/feedback', async (c) => {
+  const user = c.get('user');
+  const b = await body<{ kind: string; message: string; page: string; app_info: string }>(c);
+  const message = (b.message ?? '').trim();
+  if (!FEEDBACK_KINDS.includes(b.kind ?? '')) return c.json({ error: 'Choose what kind of feedback this is.' }, 400);
+  if (message.length < 3) return c.json({ error: 'Please write a few words.' }, 400);
+  await c.env.DB.prepare('INSERT INTO feedback (account_id, user_id, kind, message, page, app_info, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(user.account_id, user.id, b.kind, message.slice(0, 4000), (b.page ?? '').slice(0, 100) || null, (b.app_info ?? '').slice(0, 300) || null, nowIso())
+    .run();
+  return c.json({ ok: true });
+});
+
+api.get('/feedback/mine', async (c) => {
+  const user = c.get('user');
+  const { results } = await c.env.DB.prepare('SELECT id, kind, message, status, created_at FROM feedback WHERE user_id = ? ORDER BY id DESC LIMIT 20').bind(user.id).all();
+  return c.json({ feedback: results });
+});
+
 // ---------------------------------------------------------------- operator (admin) — every account
 
 async function requireAdmin(c: Context<AppEnv>, next: Next) {
@@ -859,6 +951,22 @@ api.post('/admin/accounts/:id/credit', requireAdmin, async (c) => {
   return c.json({ ok: true });
 });
 
+api.get('/admin/feedback', requireAdmin, async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT f.id, f.kind, f.message, f.page, f.app_info, f.status, f.created_at, u.display_name, u.role, a.name AS account_name
+       FROM feedback f JOIN users u ON u.id = f.user_id JOIN accounts a ON a.id = f.account_id
+      ORDER BY (f.status = 'done'), f.id DESC LIMIT 200`,
+  ).all();
+  return c.json({ feedback: results });
+});
+
+api.patch('/admin/feedback/:id', requireAdmin, async (c) => {
+  const b = await body<{ status: string }>(c);
+  if (!['new', 'read', 'done'].includes(b.status ?? '')) return c.json({ error: 'Bad status.' }, 400);
+  await c.env.DB.prepare('UPDATE feedback SET status = ? WHERE id = ?').bind(b.status, Number(c.req.param('id'))).run();
+  return c.json({ ok: true });
+});
+
 api.patch('/admin/accounts/:id', requireAdmin, async (c) => {
   const b = await body<{ unlimited: boolean }>(c);
   await c.env.DB.prepare('UPDATE accounts SET unlimited = ? WHERE id = ?').bind(b.unlimited ? 1 : 0, Number(c.req.param('id'))).run();
@@ -866,6 +974,9 @@ api.patch('/admin/accounts/:id', requireAdmin, async (c) => {
 });
 
 app.route('/api', api);
+// Android "Share -> Budget" posts here. The app's service worker normally catches it first and keeps the
+// files; this only runs if it was not ready yet, and just opens the app.
+app.post('/share', (c) => c.redirect('/#/home', 303));
 app.all('/api/*', (c) => c.json({ error: 'Not found.' }, 404));
 
 export default {

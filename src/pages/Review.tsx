@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { compressImage } from '../image';
+import { WarnIcon } from '../icons';
 import { api, type Me } from '../api';
 import { fromCents, toCents, toUsdCents } from '../../shared/money';
 import { Button, Card, ErrorText, Money, Notice, PageTitle, formatDate } from '../ui';
@@ -54,6 +56,7 @@ interface Loaded {
   edits: Edit[];
   rate_suggestion: RateSuggestion | null;
   last_used_rate: LastUsed | null;
+  photo: { parts: number; mime: string; mode: string } | null;
 }
 
 interface LastUsed {
@@ -85,6 +88,9 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
   const [lastUsed, setLastUsed] = useState<LastUsed | null>(null);
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
+  const [rereading, setRereading] = useState(false);
+  const [reload, setReload] = useState(0);
+  const morePhoto = useRef<HTMLInputElement>(null);
 
   const cats = me.categories.filter((c) => c.active);
   const isHelperReceipt = data?.receipt.created_by_role === 'helper';
@@ -112,7 +118,7 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
       else if (r.status === 'draft' && d.last_used_rate) setRateChoice('last'); // new receipt: default to the rate used last time
       else setRateChoice('auto');
     }, (e) => setError(e.message));
-  }, [id]);
+  }, [id, reload]);
 
   // When the currency or date changes, look up the rate of the day again.
   useEffect(() => {
@@ -134,6 +140,29 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
   const totalCents = toCents(total);
   const itemsCents = items.reduce((s, it) => s + toCents(it.amount), 0);
   const mismatch = items.length > 0 && Math.abs(itemsCents - totalCents) > 1;
+  // Whole-receipt check: lines that do not add up to the printed total usually mean a part of a
+  // long receipt is missing from the photos, or a figure was misread.
+  const canAddPart = !!data?.photo && data.receipt.status === 'draft' && data.photo.mode !== 'totals' && data.photo.mime !== 'application/pdf' && data.photo.parts < 6;
+
+  const addMissingPart = async (files: FileList | null) => {
+    const f = files?.[0];
+    if (!f || !data?.receipt.upload_id) return;
+    setError('');
+    setRereading(true);
+    try {
+      const form = new FormData();
+      form.append('file', await compressImage(f), 'part.jpg');
+      const res = await api<{ ok: boolean; receipt_ids: number[]; error?: string }>(`/uploads/${data.receipt.upload_id}/parts`, { form });
+      if (!res.ok || !res.receipt_ids.length) throw new Error(res.error || 'Could not read the photos again.');
+      // The receipt is read again from all photos and comes back as a new draft (sometimes with the same number).
+      if (res.receipt_ids[0] === id) setReload((n) => n + 1);
+      else go(`review/${res.receipt_ids[0]}`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRereading(false);
+    }
+  };
 
   if (error && !data) return <ErrorText>{error}</ErrorText>;
   if (!data) return <p className="text-stone-500">Loading…</p>;
@@ -193,11 +222,46 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
     <div className="space-y-4">
       <PageTitle>{r.status === 'draft' ? 'Check and save' : 'Receipt'}</PageTitle>
 
-      {r.upload_id && (
-        <a href={`/api/uploads/${r.upload_id}/file`} target="_blank" rel="noreferrer" className="block">
-          <img src={`/api/uploads/${r.upload_id}/file`} alt="Receipt" className="max-h-80 w-full rounded-xl border border-stone-200 bg-stone-100 object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
-          <span className="text-sm text-teal-800 underline">Open full photo</span>
-        </a>
+      {r.upload_id && data.photo && (
+        data.photo.mime === 'application/pdf' ? (
+          <a href={`/api/uploads/${r.upload_id}/file`} target="_blank" rel="noreferrer" className="font-semibold text-brand underline">Open the PDF</a>
+        ) : (
+          <div>
+            <div className="flex gap-2 overflow-x-auto">
+              {Array.from({ length: data.photo.parts }, (_, i) => (
+                <a key={i} href={`/api/uploads/${r.upload_id}/file?part=${i}`} target="_blank" rel="noreferrer" className={data.photo!.parts > 1 ? 'w-40 shrink-0' : 'w-full'}>
+                  <img src={`/api/uploads/${r.upload_id}/file?part=${i}`} alt={data.photo!.parts > 1 ? `Receipt photo, part ${i + 1}` : 'Receipt photo'} className="max-h-80 w-full rounded-[14px] border border-line bg-ground-2 object-contain" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                </a>
+              ))}
+            </div>
+            <span className="text-sm text-muted">
+              {data.photo.parts > 1 ? `${data.photo.parts} photos read as one receipt · ` : ''}
+              {data.photo.mode === 'totals' ? 'Totals only · ' : ''}Tap a photo to open it
+            </span>
+          </div>
+        )
+      )}
+
+      {r.status === 'draft' && mismatch && (
+        <div className="space-y-2 rounded-[18px] border border-gold bg-amber-50 p-3.5 text-amber-900">
+          <p className="flex gap-2 font-semibold">
+            <WarnIcon size={20} className="mt-0.5 shrink-0" />
+            The lines add up to {(itemsCents / 100).toFixed(2)} but the total is {(totalCents / 100).toFixed(2)}.
+          </p>
+          <p className="text-sm">
+            {itemsCents < totalCents ? 'Part of the receipt may be missing from the photo, or a line was misread.' : 'A line may be counted twice or misread.'} Check the lines below
+            {canAddPart ? ', or add a photo of the part that was missed and it will be read again.' : '.'}
+          </p>
+          {canAddPart && (
+            <>
+              <Button variant="gold" className="w-full" disabled={rereading} onClick={() => morePhoto.current?.click()}>
+                {rereading ? 'Reading all the photos again…' : 'Add the missing photo'}
+              </Button>
+              <input ref={morePhoto} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { addMissingPart(e.target.files); e.target.value = ''; }} />
+              <p className="text-xs">Reading again uses reading credit for all the photos, and replaces anything you changed on this screen.</p>
+            </>
+          )}
+        </div>
       )}
 
       {r.status === 'draft' && r.confidence === 'low' && <Notice tone="warn">The photo was hard to read. Please check every number.</Notice>}
@@ -242,10 +306,10 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
         </div>
 
         {currency !== 'USD' && (
-          <div className="space-y-2 rounded-lg bg-stone-50 p-3">
-            <p className="text-sm font-medium">Exchange rate ({currency} per 1 USD)</p>
-            <label className="flex items-start gap-2 font-normal">
-              <input type="radio" className="mt-1 w-auto" checked={rateChoice === 'auto'} onChange={() => setRateChoice('auto')} disabled={!suggestion || locked} />
+          <fieldset className="space-y-2">
+            <legend className="mb-2 font-display text-base font-semibold text-ink">Which rate for this receipt? ({currency} per 1 USD)</legend>
+            <label className={RATE_ROW}>
+              <input type="radio" className="mt-1 h-5 w-5 shrink-0" checked={rateChoice === 'auto'} onChange={() => setRateChoice('auto')} disabled={!suggestion || locked} />
               <span>
                 {suggestion ? (
                   <>
@@ -261,8 +325,8 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
               </span>
             </label>
             {lastUsed && (
-              <label className="flex items-start gap-2 font-normal">
-                <input type="radio" className="mt-1 w-auto" checked={rateChoice === 'last'} onChange={() => setRateChoice('last')} disabled={locked} />
+              <label className={RATE_ROW}>
+                <input type="radio" className="mt-1 h-5 w-5 shrink-0" checked={rateChoice === 'last'} onChange={() => setRateChoice('last')} disabled={locked} />
                 <span>
                   Last used rate: <b>{lastUsed.rate_per_usd}</b>
                   <span className="block text-xs text-stone-500">
@@ -272,20 +336,21 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
               </label>
             )}
             {r.printed_rate && (
-              <label className="flex items-start gap-2 font-normal">
-                <input type="radio" className="mt-1 w-auto" checked={rateChoice === 'receipt'} onChange={() => setRateChoice('receipt')} disabled={locked} />
+              <label className={RATE_ROW}>
+                <input type="radio" className="mt-1 h-5 w-5 shrink-0" checked={rateChoice === 'receipt'} onChange={() => setRateChoice('receipt')} disabled={locked} />
                 <span>Rate printed on the receipt: <b>{r.printed_rate}</b></span>
               </label>
             )}
-            <label className="flex items-center gap-2 font-normal">
-              <input type="radio" className="w-auto" checked={rateChoice === 'manual'} onChange={() => setRateChoice('manual')} disabled={locked} />
+            <label className={`${RATE_ROW} !items-center`}>
+              <input type="radio" className="h-5 w-5 shrink-0" checked={rateChoice === 'manual'} onChange={() => setRateChoice('manual')} disabled={locked} />
               <span className="shrink-0">New rate:</span>
               <input inputMode="decimal" value={manualRate} placeholder="e.g. 26.5" onFocus={() => setRateChoice('manual')} onChange={(e) => setManualRate(e.target.value)} disabled={locked} />
             </label>
-            <p className="text-sm">
-              = <Money cents={toUsdCents(totalCents, rate)} className="font-semibold" /> USD
-            </p>
-          </div>
+            <div className="flex items-center justify-between rounded-[18px] bg-band px-4 py-3 text-on-band">
+              <span className="text-sm text-on-band-muted">In US dollars</span>
+              <Money cents={toUsdCents(totalCents, rate)} className="font-display text-2xl font-extrabold text-gold" />
+            </div>
+          </fieldset>
         )}
 
         {isHelperReceipt ? (
@@ -310,7 +375,7 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
             Items add up to <Money cents={itemsCents} currency={currency} />
           </span>
         </div>
-        {mismatch && (
+        {mismatch && r.status !== 'draft' && (
           <Notice tone="warn">
             Items add up to {(itemsCents / 100).toFixed(2)} but the total is {(totalCents / 100).toFixed(2)}. The difference will be counted under the receipt’s category.
           </Notice>
@@ -330,7 +395,7 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
                 ))}
               </select>
               {!locked && (
-                <Button variant="ghost" onClick={() => setItems(items.filter((_, j) => j !== i))} aria-label="Remove line">✕</Button>
+                <Button variant="ghost" onClick={() => setItems(items.filter((_, j) => j !== i))} aria-label="Remove line">Remove</Button>
               )}
             </div>
           </div>
@@ -356,7 +421,7 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
             </div>
           )}
           <ErrorText>{error}</ErrorText>
-          <Button className="w-full" disabled={busy} onClick={save}>
+          <Button variant="gold" className="min-h-14 w-full text-[17px]" disabled={busy} onClick={save}>
             {busy ? 'Saving…' : r.status === 'draft' ? 'Save receipt' : 'Save changes'}
           </Button>
           {(r.status === 'draft' || me.user.role === 'owner') && (
@@ -392,6 +457,8 @@ export function Review({ me, id, go }: { me: Me; id: number; go: (to: string) =>
     </div>
   );
 }
+
+const RATE_ROW = 'flex min-h-13 cursor-pointer items-start gap-3 rounded-[14px] border border-line bg-surface px-3.5 py-2.5 font-normal has-[:checked]:border-2 has-[:checked]:border-brand has-[:checked]:bg-ground-2';
 
 // Audit entries keep raw values (cents, ids); turn them into words for display.
 function show(field: string, v: unknown, me: Me): string {

@@ -1,56 +1,147 @@
 @import 'tailwindcss';
 
-/* Card / input background. Light: white. Dark: see below. */
+/*
+  GITG look (the shared style kit for all GITG apps: https://claude.ai/artifact/6VuCEo1y4uyyQ3WjmSPbxY).
+  Sand ground, forest bands, gold for the main action, Matobo rock art.
+
+  Two layers:
+  1. GITG tokens (ground, ink, brand, gold...) for new work.
+  2. Tailwind's stone/teal/amber/red/sky/emerald scales remapped onto GITG colours,
+     so every page picks up the look without rewriting each class.
+  Night mode swaps the values under :root.dark (theme.ts sets the class on <html>).
+*/
 @theme {
+  --font-sans: 'Instrument Sans Variable', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+
+  /* GITG tokens — Day */
+  --color-ground: #f5f0e6;
+  --color-ground-2: #e9e2d2;
   --color-surface: #ffffff;
+  --color-ink: #10291b;
+  --color-body: #3e4a42;
+  --color-muted: #4f5a52;
+  --color-line: #d8d2c3;
+  --color-field: #8a7a66;
+  --color-brand: #1f4d33;
+  --color-on-brand: #f5f0e6;
+  --color-band: #10291b;
+  --color-band-2: #1b3f2a;
+  --color-on-band: #f5f0e6;
+  --color-on-band-muted: #a9b8ae;
+  --color-gold: #d9a441;
+  --color-gold-hover: #e3b45c;
+  --color-on-gold: #10291b;
+  --color-leaf: #3f8656;
+  --color-sprout: #56a06a;
+  --color-mint: #8cc79c;
+  --color-rock: #8a7a66;
+  --color-rock-light: #b7a48a;
+
+  /* Remapped Tailwind scales — Day */
+  --color-stone-50: #f5f0e6;
+  --color-stone-100: #e9e2d2;
+  --color-stone-200: #d8d2c3;
+  --color-stone-300: #c9c2b2;
+  --color-stone-400: #8a7a66;
+  --color-stone-500: #4f5a52;
+  --color-stone-600: #3e4a42;
+  --color-stone-700: #2f3a33;
+  --color-stone-800: #1b2a21;
+  --color-stone-900: #10291b;
+
+  --color-teal-50: #e3efe5;
+  --color-teal-600: #2e6b47;
+  --color-teal-700: #1f4d33;
+  --color-teal-800: #1f4d33;
+  --color-teal-900: #10291b;
+
+  --color-amber-50: #fbf1dc;
+  --color-amber-100: #f5e1b5;
+  --color-amber-700: #7a5410;
+  --color-amber-800: #6b4a0e;
+  --color-amber-900: #573c0b;
+
+  --color-red-50: #fbe9e4;
+  --color-red-300: #e3a091;
+  --color-red-600: #b3402a;
+  --color-red-700: #9e3622;
+  --color-red-800: #7f2b1b;
+
+  --color-sky-50: #e9e2d2;
+  --color-sky-900: #10291b;
+
+  --color-emerald-50: #e3efe5;
+  --color-emerald-900: #1f4d33;
 }
 
-/*
-  Dark mode without a dark: class on every element: the colour scale the app uses is
-  remapped. Greys flip (light backgrounds become dark, dark text becomes light), and the
-  pale tints / dark text of the accent colours swap so notices stay readable.
-  The "dark" class is put on <html> by theme.ts (System / Light / Dark setting).
-*/
 :root.dark {
   color-scheme: dark;
-  --color-surface: oklch(21.6% 0.006 56.043);
 
-  --color-stone-50: oklch(14.7% 0.004 49.25);
-  --color-stone-100: oklch(21.6% 0.006 56.043);
-  --color-stone-200: oklch(30% 0.007 34.298);
-  --color-stone-300: oklch(40% 0.01 67.558);
-  --color-stone-400: oklch(55% 0.011 73.639);
-  --color-stone-500: oklch(70.9% 0.01 56.259);
-  --color-stone-600: oklch(80% 0.005 56.366);
-  --color-stone-700: oklch(88% 0.003 48.717);
-  --color-stone-800: oklch(94% 0.001 106.424);
-  --color-stone-900: oklch(97% 0.001 106.424);
+  /* GITG tokens — Night */
+  --color-ground: #0e2217;
+  --color-ground-2: #132c1e;
+  --color-surface: #183624;
+  --color-ink: #f5f0e6;
+  --color-body: #d3ddd5;
+  --color-muted: #a9b8ae;
+  --color-line: #2a4a36;
+  --color-field: #608468;
+  --color-brand: #8cc79c;
+  --color-on-brand: #10291b;
+  --color-band: #0a1a11;
+  --color-band-2: #1b3f2a;
 
-  --color-teal-50: oklch(27.7% 0.046 192.524);
-  --color-teal-800: oklch(85.5% 0.138 181.071);
-  --color-teal-900: oklch(91% 0.096 180.426);
+  /* Remapped Tailwind scales — Night */
+  --color-stone-50: #0e2217;
+  --color-stone-100: #132c1e;
+  --color-stone-200: #2a4a36;
+  --color-stone-300: #608468;
+  --color-stone-400: #7e9886;
+  --color-stone-500: #a9b8ae;
+  --color-stone-600: #d3ddd5;
+  --color-stone-700: #e2e8e3;
+  --color-stone-800: #eef1ec;
+  --color-stone-900: #f5f0e6;
 
-  --color-red-50: oklch(25.8% 0.092 26.042);
-  --color-red-300: oklch(44.4% 0.177 26.899);
-  --color-red-700: oklch(80.8% 0.114 19.571);
-  --color-red-800: oklch(88.5% 0.062 18.334);
+  --color-teal-50: #1b3f2a;
+  --color-teal-600: #8cc79c;
+  --color-teal-700: #8cc79c;
+  --color-teal-800: #8cc79c;
+  --color-teal-900: #b9dec2;
 
-  --color-amber-50: oklch(27.9% 0.077 45.635);
-  --color-amber-100: oklch(41.4% 0.112 45.904);
-  --color-amber-700: oklch(87.9% 0.169 91.605);
-  --color-amber-800: oklch(92.4% 0.12 95.746);
-  --color-amber-900: oklch(96.2% 0.059 95.617);
+  --color-amber-50: #3a2e12;
+  --color-amber-100: #4a3a16;
+  --color-amber-700: #e9c27a;
+  --color-amber-800: #f0d198;
+  --color-amber-900: #f5e1b5;
 
-  --color-sky-50: oklch(29.3% 0.066 243.157);
-  --color-sky-900: oklch(95.1% 0.026 236.824);
+  --color-red-50: #3b1a14;
+  --color-red-300: #8c4032;
+  --color-red-600: #e07a62;
+  --color-red-700: #f2b8a8;
+  --color-red-800: #f7cfc4;
 
-  --color-emerald-50: oklch(26.2% 0.051 172.552);
-  --color-emerald-900: oklch(95% 0.052 163.051);
+  --color-sky-50: #183624;
+  --color-sky-900: #f5f0e6;
+
+  --color-emerald-50: #1b3f2a;
+  --color-emerald-900: #b9dec2;
 }
 
 @layer base {
-  input, select, textarea {
-    @apply w-full rounded-lg border border-stone-300 bg-surface px-3 py-2 text-base outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20;
+  body {
+    @apply bg-ground font-sans text-body antialiased;
   }
-  label { @apply block text-sm font-medium text-stone-700; }
+  h1, h2, h3 {
+    @apply font-display text-ink;
+  }
+  input:not([type='radio']):not([type='checkbox']), select, textarea {
+    @apply w-full rounded-[10px] border-[1.5px] border-field bg-surface px-3 py-2.5 text-base text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/25;
+  }
+  input[type='radio'], input[type='checkbox'] {
+    accent-color: var(--color-brand);
+  }
+  label { @apply block text-sm font-semibold text-ink; }
+  :focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
 }

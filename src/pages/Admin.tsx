@@ -58,6 +58,7 @@ export function Admin() {
 
   return (
     <div className="space-y-4">
+      <FeedbackInbox />
       <PageTitle>Accounts and credit</PageTitle>
       {totals && (
         <Card className="grid grid-cols-3 gap-2 text-center text-sm">
@@ -114,5 +115,67 @@ export function Admin() {
         </Card>
       ))}
     </div>
+  );
+}
+
+interface FeedbackRow {
+  id: number;
+  kind: string;
+  message: string;
+  app_info: string | null;
+  status: 'new' | 'read' | 'done';
+  created_at: string;
+  display_name: string;
+  role: string;
+  account_name: string;
+}
+
+// Feedback sent from inside the app by every account. New first; "done" ones drop to the bottom.
+function FeedbackInbox() {
+  const [rows, setRows] = useState<FeedbackRow[] | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const load = () => api<{ feedback: FeedbackRow[] }>('/admin/feedback').then((d) => setRows(d.feedback), () => setRows([]));
+  useEffect(() => {
+    load();
+  }, []);
+  if (!rows) return null;
+  const open = rows.filter((r) => r.status !== 'done');
+  const shown = showAll ? rows : open;
+  const mark = async (id: number, status: FeedbackRow['status']) => {
+    await api(`/admin/feedback/${id}`, { method: 'PATCH', body: { status } });
+    load();
+  };
+  return (
+    <Card className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <h2 className="font-semibold">Feedback ({rows.filter((r) => r.status === 'new').length} new)</h2>
+        {rows.length > open.length && (
+          <button className="text-xs text-muted underline" onClick={() => setShowAll(!showAll)}>{showAll ? 'Hide dealt with' : 'Show all'}</button>
+        )}
+      </div>
+      {shown.length === 0 && <p className="text-sm text-muted">Nothing waiting.</p>}
+      <ul className="divide-y divide-line">
+        {shown.map((f) => (
+          <li key={f.id} className="space-y-1 py-2.5 text-sm">
+            <p className="flex justify-between gap-2 text-xs text-muted">
+              <span>
+                <b className={f.status === 'new' ? 'text-amber-700' : ''}>{f.kind}</b> · {f.display_name} ({f.role}, {f.account_name}) · {formatDate(f.created_at)}
+              </span>
+              <span>{f.status}</span>
+            </p>
+            <p className="whitespace-pre-line text-ink">{f.message}</p>
+            {f.app_info && <p className="text-[11px] break-all text-muted">{f.app_info}</p>}
+            <div className="flex gap-2">
+              {f.status === 'new' && <Button variant="ghost" onClick={() => mark(f.id, 'read')}>Mark seen</Button>}
+              {f.status !== 'done' ? (
+                <Button variant="ghost" onClick={() => mark(f.id, 'done')}>Dealt with</Button>
+              ) : (
+                <Button variant="ghost" onClick={() => mark(f.id, 'read')}>Reopen</Button>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

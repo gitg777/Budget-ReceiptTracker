@@ -117,39 +117,53 @@ function toBase64(bytes: ArrayBuffer): string {
 
 export const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
 
+export interface ExtractFile {
+  bytes: ArrayBuffer;
+  mime: string;
+}
+
+export type ReadMode = 'full' | 'totals';
+
+const PARTS_NOTE = (n: number) =>
+  `These ${n} photos are parts of ONE long receipt, in order from the top of the slip to the bottom. ` +
+  'Neighbouring photos overlap a little: a line that appears at the bottom of one photo and the top of the next is ONE line, count it once. ' +
+  'Return a single receipt. Take the shop and date from the first photo and the total from the last. ' +
+  'If the parts do not seem to join up (a gap in the lines), still return what you can read, set confidence to "low" and say so in notes.';
+
+const TOTALS_NOTE =
+  'Totals only: the person does not want the line items. Read the shop, date, currency, total and payment method only, ' +
+  'and return exactly one item per receipt that names what was bought in a few words (for example "Groceries, OK Mart") with the full total.';
+
 export async function extractReceipts(opts: {
   apiKey: string;
   model: string;
-  bytes: ArrayBuffer;
-  mime: string;
+  files: ExtractFile[];
+  mode?: ReadMode;
   categories: string[];
 }): Promise<ExtractionResult> {
   const client = new Anthropic({ apiKey: opts.apiKey, maxRetries: 2 });
-  const data = toBase64(opts.bytes);
 
-  const fileBlock: Anthropic.ContentBlockParam =
-    opts.mime === 'application/pdf'
+  const fileBlocks: Anthropic.ContentBlockParam[] = opts.files.map((f) => {
+    const data = toBase64(f.bytes);
+    return f.mime === 'application/pdf'
       ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
-      : {
-          type: 'image',
-          source: { type: 'base64', media_type: opts.mime as (typeof SUPPORTED_IMAGE_TYPES)[number], data },
-        };
+      : { type: 'image', source: { type: 'base64', media_type: f.mime as (typeof SUPPORTED_IMAGE_TYPES)[number], data } };
+  });
+  const instructions = [
+    opts.files.length > 1 ? PARTS_NOTE(opts.files.length) : 'Extract every receipt in this file.',
+    opts.mode === 'totals' ? TOTALS_NOTE : '',
+  ].filter(Boolean).join('\n\n');
 
   const response = await client.messages.create({
     model: opts.model,
     max_tokens: 16000,
     system: SYSTEM_PROMPT,
     output_config: { format: { type: 'json_schema', schema: buildSchema(opts.categories) } },
-    messages: [
-      {
-        role: 'user',
-        content: [fileBlock, { type: 'text', text: 'Extract every receipt in this file.' }],
-      },
-    ],
+    messages: [{ role: 'user', content: [...fileBlocks, { type: 'text', text: instructions }] }],
   });
 
   if (response.stop_reason === 'refusal') throw new Error('The reader declined this file. Please enter it by hand.');
-  if (response.stop_reason === 'max_tokens') throw new Error('This file has too many lines to read in one go. Try photographing fewer receipts at a time.');
+  if (response.stop_reason === 'max_tokens') throw new Error('This receipt has too many lines to read in one go. Try "Totals only", or fewer receipts per photo.');
 
   const text = response.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
   const parsed = JSON.parse(text) as { receipts: ExtractedReceipt[] };
