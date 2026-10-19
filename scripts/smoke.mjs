@@ -39,6 +39,11 @@ check('owner registers', r.status === 200, r.data);
 r = await owner('/me');
 check('13 default categories', r.data?.categories?.length === 13, r.data);
 const cat = Object.fromEntries(r.data.categories.map((c) => [c.name, c.id]));
+check('new account starts with $5 reading credit', r.data.credit?.balance_micros === 5_000_000 && !r.data.credit.unlimited, r.data.credit);
+r = await owner('/credit');
+check('owner sees the free-credit grant in the history', r.data.ledger?.[0]?.kind === 'grant', r.data);
+r = await owner('/admin/accounts');
+check('ordinary owner cannot open the operator screen', r.status === 403);
 
 r = await owner('/helpers', { body: { display_name: 'Grace', username: `grace${stamp}`, pin: '1234', allowance: 100, period: 'monthly', carry_over: true, starts_on: today } });
 check('owner adds helper', r.status === 200, r.data);

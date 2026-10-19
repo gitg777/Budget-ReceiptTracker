@@ -108,7 +108,7 @@ async function loadUser(c: Context<AppEnv>): Promise<SessionUser | null> {
   const token = getCookie(c, COOKIE);
   if (!token) return null;
   const row = await c.env.DB.prepare(
-    `SELECT u.id, u.account_id, u.role, u.display_name, u.email, u.username, s.expires_at, a.name AS account_name
+    `SELECT u.id, u.account_id, u.role, u.display_name, u.email, u.username, u.is_admin, s.expires_at, a.name AS account_name
        FROM sessions s JOIN users u ON u.id = s.user_id JOIN accounts a ON a.id = u.account_id
       WHERE s.token_hash = ? AND u.active = 1`,
   )

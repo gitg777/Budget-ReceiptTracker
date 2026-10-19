@@ -1,7 +1,7 @@
 // API for the Budget & Receipt Tracker. Everything under /api/*; the React app is served as static assets.
 
 import { Hono } from 'hono';
-import type { Context } from 'hono';
+import type { Context, Next } from 'hono';
 import type { AppEnv, Env, SessionUser } from './types';
 import {
   checkSecret, clearFailures, endSession, lockedMinutes, newPasswordHash, nowIso, randomToken,
@@ -9,6 +9,7 @@ import {
 } from './auth';
 import { extractReceipts, SUPPORTED_IMAGE_TYPES, type ExtractedReceipt } from './extract';
 import { refreshRates, suggestRate } from './rates';
+import { canRead, chargeReading, creditStatus, grantStartingCredit } from './credit';
 import { applyInput, diff, InputError, type ItemRow, type ReceiptInput, type ReceiptRow } from './receipts';
 import { DEFAULT_CATEGORIES, COMMON_CURRENCIES, toCents, toUsdCents } from '../shared/money';
 import {
@@ -58,11 +59,12 @@ api.post('/auth/register', async (c) => {
   )
     .bind(account!.id, email, name, hash, salt, now)
     .first<{ id: number }>();
-  await c.env.DB.batch(
-    DEFAULT_CATEGORIES.map((cat, i) =>
+  await c.env.DB.batch([
+    ...DEFAULT_CATEGORIES.map((cat, i) =>
       c.env.DB.prepare('INSERT INTO categories (account_id, name, sort) VALUES (?, ?, ?)').bind(account!.id, cat, i),
     ),
-  );
+    ...(await grantStartingCredit(c.env, account!.id)),
+  ]);
   await startSession(c, user!.id);
   return c.json({ ok: true });
 });
@@ -118,7 +120,13 @@ async function categoriesFor(db: D1Database, accountId: number) {
 
 api.get('/me', async (c) => {
   const user = c.get('user');
-  return c.json({ user, categories: await categoriesFor(c.env.DB, user.account_id), currencies: COMMON_CURRENCIES, today: today() });
+  return c.json({
+    user,
+    categories: await categoriesFor(c.env.DB, user.account_id),
+    currencies: COMMON_CURRENCIES,
+    today: today(),
+    credit: await creditStatus(c.env, user.account_id),
+  });
 });
 
 // ---------------------------------------------------------------- categories
@@ -210,6 +218,11 @@ async function runExtraction(env: Env, user: SessionUser, uploadId: number): Pro
     await env.DB.prepare("UPDATE uploads SET status = 'failed', error = ? WHERE id = ?").bind('Receipt reading is not set up yet (no API key).', uploadId).run();
     return { ok: false, receipt_ids: [], error: 'Receipt reading is not set up yet. You can still enter the receipt by hand.' };
   }
+  if (!(await canRead(env, user.account_id))) {
+    await env.DB.prepare("UPDATE uploads SET status = 'failed', error = 'Out of reading credit.' WHERE id = ?").bind(uploadId).run();
+    const who = user.role === 'owner' ? `Contact ${env.SUPPORT_CONTACT || 'the app administrator'} to top up` : 'Ask the owner to top up';
+    return { ok: false, receipt_ids: [], error: `Reading credit is used up. ${who}, or type this receipt in by hand.` };
+  }
   const cats = (await categoriesFor(env.DB, user.account_id)).filter((c) => c.active).map((c) => c.name);
   try {
     const result = await extractReceipts({
@@ -222,6 +235,7 @@ async function runExtraction(env: Env, user: SessionUser, uploadId: number): Pro
     await env.DB.prepare("UPDATE uploads SET status = 'done', error = NULL, model = ?, input_tokens = ?, output_tokens = ?, raw_json = ? WHERE id = ?")
       .bind(result.model, result.input_tokens, result.output_tokens, result.raw, uploadId)
       .run();
+    await chargeReading(env, user.account_id, uploadId, result.model, result.input_tokens, result.output_tokens);
     // A retry replaces earlier drafts from the same upload (saved receipts are kept).
     await env.DB.prepare("DELETE FROM receipts WHERE upload_id = ? AND status = 'draft'").bind(uploadId).run();
     const ids = await createDrafts(env, user, uploadId, result.receipts);
@@ -782,6 +796,61 @@ api.get('/reports/export', requireOwner, async (c) => {
     ).bind(user.account_id, from, to).all(),
   ]);
   return c.json({ receipts, items, edits });
+});
+
+// ---------------------------------------------------------------- reading credit
+
+api.get('/credit', requireOwner, async (c) => {
+  const user = c.get('user');
+  const { results } = await c.env.DB.prepare(
+    'SELECT kind, amount_micros, note, created_at FROM credit_ledger WHERE account_id = ? ORDER BY id DESC LIMIT 30',
+  ).bind(user.account_id).all();
+  return c.json({ ...(await creditStatus(c.env, user.account_id)), ledger: results });
+});
+
+// ---------------------------------------------------------------- operator (admin) — every account
+
+async function requireAdmin(c: Context<AppEnv>, next: Next) {
+  if (!c.get('user').is_admin) return c.json({ error: 'Not allowed.' }, 403);
+  await next();
+}
+
+api.get('/admin/accounts', requireAdmin, async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT a.id, a.name, a.credit_micros, a.unlimited, a.created_at,
+            (SELECT display_name FROM users WHERE account_id = a.id AND role = 'owner' ORDER BY id LIMIT 1) AS owner_name,
+            (SELECT email FROM users WHERE account_id = a.id AND role = 'owner' ORDER BY id LIMIT 1) AS owner_email,
+            (SELECT COUNT(*) FROM users WHERE account_id = a.id AND role = 'helper') AS helpers,
+            (SELECT COUNT(*) FROM uploads WHERE account_id = a.id AND status = 'done') AS readings,
+            (SELECT COALESCE(SUM(cost_micros), 0) FROM uploads WHERE account_id = a.id) AS cost_micros,
+            (SELECT COALESCE(SUM(charge_micros), 0) FROM uploads WHERE account_id = a.id) AS charged_micros,
+            (SELECT COALESCE(SUM(amount_micros), 0) FROM credit_ledger WHERE account_id = a.id AND kind = 'topup') AS topups_micros,
+            (SELECT MAX(created_at) FROM uploads WHERE account_id = a.id) AS last_reading
+       FROM accounts a ORDER BY a.id DESC`,
+  ).all();
+  return c.json({ accounts: results });
+});
+
+api.post('/admin/accounts/:id/credit', requireAdmin, async (c) => {
+  const id = Number(c.req.param('id'));
+  const b = await body<{ amount_usd: number; note: string; kind: 'topup' | 'adjust' }>(c);
+  const amount = Math.round(Number(b.amount_usd) * 1_000_000);
+  if (!Number.isFinite(amount) || amount === 0) return c.json({ error: 'Enter an amount in USD.' }, 400);
+  const kind = b.kind === 'adjust' || amount < 0 ? 'adjust' : 'topup';
+  const exists = await c.env.DB.prepare('SELECT 1 FROM accounts WHERE id = ?').bind(id).first();
+  if (!exists) return c.json({ error: 'Account not found.' }, 404);
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE accounts SET credit_micros = credit_micros + ? WHERE id = ?').bind(amount, id),
+    c.env.DB.prepare('INSERT INTO credit_ledger (account_id, kind, amount_micros, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(id, kind, amount, (b.note ?? '').slice(0, 200) || null, c.get('user').id, nowIso()),
+  ]);
+  return c.json({ ok: true });
+});
+
+api.patch('/admin/accounts/:id', requireAdmin, async (c) => {
+  const b = await body<{ unlimited: boolean }>(c);
+  await c.env.DB.prepare('UPDATE accounts SET unlimited = ? WHERE id = ?').bind(b.unlimited ? 1 : 0, Number(c.req.param('id'))).run();
+  return c.json({ ok: true });
 });
 
 app.route('/api', api);

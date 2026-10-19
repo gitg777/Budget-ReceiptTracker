@@ -25,7 +25,12 @@
   "triggers": { "crons": ["15 4,12 * * *"] },
   "vars": {
     // Change to claude-sonnet-5-5 if people report bad readings (see docs/SETUP.md)
-    "EXTRACT_MODEL": "claude-haiku-5-5"
+    "EXTRACT_MODEL": "claude-haiku-5-5",
+    // Users pay Anthropic's cost times this number for each reading
+    "MARKUP": "20",
+    // Free reading credit for every new account, in USD
+    "FREE_CREDIT_USD": "5"
+    // SUPPORT_CONTACT: who people contact to top up (shown in the app). Not set yet.
   }
   // Secret (not in this file): ANTHROPIC_API_KEY — set with `npx wrangler secret put ANTHROPIC_API_KEY`
 }

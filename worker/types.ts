@@ -6,6 +6,12 @@ export interface Env {
   EXTRACT_MODEL: string;
   /** Optional. When set, new owner accounts need this code (stops strangers using your API credit). */
   SIGNUP_CODE?: string;
+  /** Price multiplier on Anthropic's cost (default 20). */
+  MARKUP?: string;
+  /** Free reading credit for new accounts, in USD (default 5). */
+  FREE_CREDIT_USD?: string;
+  /** Shown to people who run out of credit, e.g. a WhatsApp number. */
+  SUPPORT_CONTACT?: string;
 }
 
 export interface SessionUser {
@@ -16,6 +22,7 @@ export interface SessionUser {
   display_name: string;
   email: string | null;
   username: string | null;
+  is_admin: number;
 }
 
 export type AppEnv = { Bindings: Env; Variables: { user: SessionUser } };

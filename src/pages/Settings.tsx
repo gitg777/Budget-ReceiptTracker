@@ -2,12 +2,21 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api, type Me } from '../api';
 import { fromCents } from '../../shared/money';
 import { Button, Card, ErrorText, Notice, PageTitle, formatDate } from '../ui';
+import { formatCredit, receiptsFor } from '../../shared/pricing';
+import { getTheme, setTheme, type ThemeChoice } from '../theme';
 
 export function Settings({ me, onChange, logout }: { me: Me; onChange: () => void; logout: () => void }) {
   const isOwner = me.user.role === 'owner';
   return (
     <div className="space-y-4">
       <PageTitle>More</PageTitle>
+      {me.user.is_admin === 1 && (
+        <a href="#/admin" className="block">
+          <Notice>Operator: accounts, credit and top-ups →</Notice>
+        </a>
+      )}
+      {isOwner && <Credit me={me} />}
+      <Appearance />
       {isOwner && <Rates me={me} />}
       {isOwner && <Categories me={me} onChange={onChange} />}
       <Password me={me} />
@@ -203,5 +212,105 @@ function InstallHint() {
     <Notice>
       To put this app on your home screen: in Chrome tap ⋮ → “Add to Home screen”. On iPhone (Safari) tap Share → “Add to Home Screen”.
     </Notice>
+  );
+}
+
+interface LedgerRow {
+  kind: 'grant' | 'topup' | 'usage' | 'adjust';
+  amount_micros: number;
+  note: string | null;
+  created_at: string;
+}
+
+// Reading credit: balance, what a top-up buys, and recent movements.
+function Credit({ me }: { me: Me }) {
+  const [ledger, setLedger] = useState<LedgerRow[]>([]);
+  const c = me.credit;
+  useEffect(() => {
+    api<{ ledger: LedgerRow[] }>('/credit').then((d) => setLedger(d.ledger), () => undefined);
+  }, []);
+  if (!c) return null;
+  if (c.unlimited) {
+    return (
+      <Card>
+        <h2 className="font-semibold">Reading credit</h2>
+        <p className="text-sm text-stone-600">Unlimited on this account.</p>
+      </Card>
+    );
+  }
+  // Group the many small reading charges into one line per day.
+  const rows: Array<{ label: string; amount: number; date: string }> = [];
+  for (const l of ledger) {
+    const day = l.created_at.slice(0, 10);
+    const last = rows[rows.length - 1];
+    if (l.kind === 'usage' && last && last.label.startsWith('Receipt readings') && last.date === day) {
+      last.amount += l.amount_micros;
+      const n = Number(last.label.match(/\d+/)?.[0] ?? 1) + 1;
+      last.label = `Receipt readings (${n})`;
+    } else {
+      const label = l.kind === 'usage' ? 'Receipt readings (1)' : l.kind === 'grant' ? 'Free starting credit' : l.note || (l.kind === 'topup' ? 'Top-up' : 'Adjustment');
+      rows.push({ label, amount: l.amount_micros, date: day });
+    }
+  }
+  return (
+    <Card className="space-y-3">
+      <div className="flex items-baseline justify-between">
+        <h2 className="font-semibold">Reading credit</h2>
+        <span className={`text-xl font-semibold ${c.balance_micros <= 0 ? 'text-red-700' : ''}`}>{formatCredit(c.balance_micros)}</span>
+      </div>
+      <p className="text-sm text-stone-600">
+        About {receiptsFor(c.balance_micros, c.per_receipt_micros).toLocaleString()} receipts left. Reading costs about {formatCredit(c.per_receipt_micros * 100)} per 100 receipts. Typing a receipt in by hand is always free.
+      </p>
+      <div>
+        <p className="mb-1 text-sm font-medium">Top up — contact {c.contact}</p>
+        <ul className="grid grid-cols-2 gap-2 text-sm">
+          {c.packs_usd.map((usd) => (
+            <li key={usd} className="rounded-lg border border-stone-200 px-3 py-2">
+              <b>${usd}</b> ≈ {receiptsFor(usd * 1_000_000, c.per_receipt_micros).toLocaleString()} receipts
+            </li>
+          ))}
+        </ul>
+      </div>
+      {rows.length > 0 && (
+        <ul className="divide-y divide-stone-100 text-sm">
+          {rows.slice(0, 10).map((r, i) => (
+            <li key={i} className="flex justify-between py-1">
+              <span>
+                {r.label} <span className="text-xs text-stone-500">{formatDate(r.date)}</span>
+              </span>
+              <span className={r.amount < 0 ? 'text-stone-600' : 'text-emerald-900'}>{r.amount > 0 ? '+' : ''}{formatCredit(r.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function Appearance() {
+  const [choice, setChoice] = useState<ThemeChoice>(getTheme);
+  const options: Array<[ThemeChoice, string]> = [
+    ['system', 'Same as phone'],
+    ['light', 'Light'],
+    ['dark', 'Dark'],
+  ];
+  return (
+    <Card>
+      <h2 className="mb-2 font-semibold">Appearance</h2>
+      <div className="grid grid-cols-3 gap-2">
+        {options.map(([value, label]) => (
+          <Button
+            key={value}
+            variant={choice === value ? 'primary' : 'secondary'}
+            onClick={() => {
+              setTheme(value);
+              setChoice(value);
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+    </Card>
   );
 }

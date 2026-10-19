@@ -38,8 +38,18 @@ export interface Category {
 }
 
 export interface Me {
-  user: { id: number; account_id: number; account_name: string; role: 'owner' | 'helper'; display_name: string; email: string | null; username: string | null };
+  user: { id: number; account_id: number; account_name: string; role: 'owner' | 'helper'; display_name: string; email: string | null; username: string | null; is_admin: number };
   categories: Category[];
   currencies: string[];
   today: string;
+  credit: CreditStatus;
+}
+
+export interface CreditStatus {
+  balance_micros: number;
+  unlimited: boolean;
+  /** Average charge per receipt reading, used for "about N receipts left". */
+  per_receipt_micros: number;
+  packs_usd: number[];
+  contact: string;
 }

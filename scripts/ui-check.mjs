@@ -4,7 +4,8 @@ import { chromium } from 'playwright';
 const out = process.argv[2] ?? '.';
 const BASE = process.env.BASE ?? 'http://127.0.0.1:8787';
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
+// DARK=1 runs the same clicks with the phone set to dark mode
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, colorScheme: process.env.DARK ? 'dark' : 'light' });
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));

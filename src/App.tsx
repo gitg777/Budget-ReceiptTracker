@@ -8,6 +8,7 @@ import { Reports } from './pages/Reports';
 import { Helpers } from './pages/Helpers';
 import { Settings } from './pages/Settings';
 import { CashUp } from './pages/CashUp';
+import { Admin } from './pages/Admin';
 
 const ME_KEY = 'budget-me';
 
@@ -98,11 +99,14 @@ export function App() {
     case 'settings':
       content = <Settings me={me} onChange={refreshMe} logout={logout} />;
       break;
+    case 'admin':
+      content = me.user.is_admin ? <Admin /> : null;
+      break;
     case 'cashup':
       content = !isOwner ? <CashUp go={go} /> : null;
       break;
     default:
-      content = <Home me={me} go={go} online={online} />;
+      content = <Home me={me} go={go} online={online} onCreditChange={refreshMe} />;
   }
 
   const tabs = isOwner
@@ -122,7 +126,7 @@ export function App() {
 
   return (
     <div className="mx-auto min-h-dvh max-w-2xl pb-24">
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-200 bg-white/95 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-200 bg-surface/95 px-4 py-3 backdrop-blur">
         <span className="font-semibold text-teal-800">{me.user.account_name}</span>
         <span className="text-sm text-stone-500">
           {me.user.display_name}
@@ -130,13 +134,13 @@ export function App() {
         </span>
       </header>
       <main className="p-4">{content ?? <p>Not available.</p>}</main>
-      <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-stone-200 bg-white pb-[env(safe-area-inset-bottom)]">
+      <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-stone-200 bg-surface pb-[env(safe-area-inset-bottom)]">
         <div className="mx-auto flex max-w-2xl">
           {tabs.map(([key, label]) => (
             <a
               key={key}
               href={'#/' + key}
-              className={`flex-1 py-3 text-center text-sm font-medium ${page === key || (page === 'review' && key === 'home') ? 'text-teal-700' : 'text-stone-500'}`}
+              className={`flex-1 py-3 text-center text-sm font-medium ${page === key || (page === 'review' && key === 'home') ? 'text-teal-800' : 'text-stone-500'}`}
             >
               {label}
             </a>

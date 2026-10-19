@@ -3,6 +3,7 @@ import { api, type Me } from '../api';
 import { compressImage } from '../image';
 import { addToQueue, listQueue, onQueueChange, processQueue, removeFromQueue, retryItem, type QueuedPhoto } from '../queue';
 import { Button, Card, ErrorText, Money, Notice, PageTitle, formatDate, Bar } from '../ui';
+import { formatCredit, receiptsFor } from '../../shared/pricing';
 
 interface DraftRow {
   id: number;
@@ -20,7 +21,7 @@ interface FailedUpload {
   created_at: string;
 }
 
-export function Home({ me, go, online }: { me: Me; go: (to: string) => void; online: boolean }) {
+export function Home({ me, go, online, onCreditChange }: { me: Me; go: (to: string) => void; online: boolean; onCreditChange: () => void }) {
   const [queue, setQueue] = useState<QueuedPhoto[]>([]);
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
   const [failed, setFailed] = useState<FailedUpload[]>([]);
@@ -44,9 +45,12 @@ export function Home({ me, go, online }: { me: Me; go: (to: string) => void; onl
     if (results.length) {
       const found = results.reduce((n, r) => n + r.receipt_ids.length, 0);
       setMessage(found ? `Read ${found} receipt${found === 1 ? '' : 's'}. Check and save below.` : '');
+      const failed = results.find((r) => !r.ok && r.error);
+      if (failed) setError(failed.error!);
       await loadServer();
+      onCreditChange(); // balance changed
     }
-  }, [loadServer]);
+  }, [loadServer, onCreditChange]);
 
   useEffect(() => {
     const refresh = () => listQueue().then(setQueue);
@@ -95,6 +99,7 @@ export function Home({ me, go, online }: { me: Me; go: (to: string) => void; onl
       {me.user.role === 'helper' && <HelperAllowance go={go} />}
 
       <PageTitle>Add a receipt</PageTitle>
+      <CreditLine me={me} />
       <div className="grid grid-cols-2 gap-3">
         <Button className="py-6 text-lg" onClick={() => camera.current?.click()}>
           📷 Take photo
@@ -147,7 +152,7 @@ export function Home({ me, go, online }: { me: Me; go: (to: string) => void; onl
                   <span className="text-stone-500">{formatDate(u.created_at)}</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" onClick={() => api(`/uploads/${u.id}/retry`, { method: 'POST' }).then(loadServer, (e) => setError(e.message))}>Try again</Button>
+                  <Button variant="secondary" onClick={() => api<{ ok: boolean; error?: string }>(`/uploads/${u.id}/retry`, { method: 'POST' }).then((r) => { if (!r.ok && r.error) setError(r.error); loadServer(); onCreditChange(); }, (e) => setError(e.message))}>Try again</Button>
                   <Button variant="secondary" onClick={() => manual(u.id)}>Type it in</Button>
                   <Button variant="danger" onClick={() => api(`/uploads/${u.id}`, { method: 'DELETE' }).then(loadServer)}>Delete</Button>
                 </div>
@@ -226,5 +231,33 @@ function HelperAllowance({ go }: { go: (to: string) => void }) {
         </Notice>
       )}
     </Card>
+  );
+}
+
+// Reading credit left. Owners see the balance; helpers only hear about it when it runs low.
+function CreditLine({ me }: { me: Me }) {
+  const c = me.credit;
+  if (!c || c.unlimited) return null;
+  const left = receiptsFor(c.balance_micros, c.per_receipt_micros);
+  const owner = me.user.role === 'owner';
+  if (c.balance_micros <= 0) {
+    return (
+      <Notice tone="warn">
+        Reading credit is used up, so photos can't be read automatically. {owner ? `Contact ${c.contact} to top up.` : 'Ask the owner to top up.'} You can still type receipts in by hand.
+      </Notice>
+    );
+  }
+  if (left < 20) {
+    return (
+      <Notice tone="warn">
+        Reading credit is running low: about {left} receipt{left === 1 ? '' : 's'} left. {owner ? `Contact ${c.contact} to top up.` : 'Let the owner know.'}
+      </Notice>
+    );
+  }
+  if (!owner) return null;
+  return (
+    <a href="#/settings" className="block text-sm text-stone-600">
+      Reading credit: <b>{formatCredit(c.balance_micros)}</b> · about {left.toLocaleString()} receipts
+    </a>
   );
 }

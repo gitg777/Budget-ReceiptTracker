@@ -92,6 +92,12 @@ The scans in your Google Drive "Receipts" folder are multi-page PDFs of up to 10
 npm test                      # unit tests
 npm run migrate:local
 npx wrangler dev              # in a second terminal
-node scripts/smoke.mjs        # 38 end-to-end API checks
+node scripts/smoke.mjs        # 41 end-to-end API checks
 node scripts/ui-check.mjs .   # clicks through the screens on a phone-sized browser
+DARK=1 node scripts/ui-check.mjs .   # same, in dark mode
+
+# Reading credit, with a stand-in for Anthropic (no real API key or cost):
+#   put ANTHROPIC_API_KEY=test and ANTHROPIC_BASE_URL=http://127.0.0.1:9999 in .dev.vars,
+#   start node scripts/mock-anthropic.mjs and the dev server, then:
+node scripts/smoke-credit.mjs # 10 checks: charge per reading, out of credit, top-up, unlimited
 ```

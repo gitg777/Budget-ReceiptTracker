@@ -59,6 +59,15 @@ The app tracks two separate things.
 - **Not checked:** the RBZ website itself was unreachable from the build environment. The feed is **not** an official RBZ publication. If you need the official RBZ rate exactly, enter it as your own rate.
 - **Market (street) rates** are not fetched automatically. There is no stable source, and quoting them is sensitive. Use "my own rate" for those.
 
+## Reading credit (what users pay)
+
+- Every new account gets **$5 free reading credit** (`FREE_CREDIT_USD` in `wrangler.jsonc`).
+- Each photo read is charged at **20× what Anthropic charges** (`MARKUP`), using the real token counts of that reading, and taken from the account's credit. Helpers draw on their owner's credit.
+- When credit runs out, photos are refused with a "contact … to top up" message. Typing a receipt in by hand stays free. The photo is kept, so **Try again** works after a top-up.
+- **Top-ups are done by the operator** (you) on the **More → Operator** screen: +$1 / +$5 / +$10 / +$20 or any amount, with a note (e.g. the EcoCash reference). The same screen shows every account's balance, what its readings cost you at Anthropic, and what was charged.
+- Your own account (Home Budget) is set to **unlimited**, so you are never charged.
+- The first real reading (19 Oct 2026) used 5,360 tokens in and 726 out on Haiku 5.5. That is $0.000899 at Anthropic and $0.018 at 20×, so $1 ≈ 55 receipts, $5 ≈ 278, $10 ≈ 556 and $20 ≈ 1,112. The app recalculates these estimates from each account's real readings as they build up.
+
 ## Cost of reading receipts
 
 - **Prices:** Claude Haiku 5.5 is $0.10 per million tokens in and $0.50 per million out. This is from Anthropic's price list as published in October 2026, so check console.anthropic.com before relying on it.

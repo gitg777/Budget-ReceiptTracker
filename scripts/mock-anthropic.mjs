@@ -1,0 +1,29 @@
+// Stand-in for the Anthropic API for local tests: answers every request with one fixed receipt
+// and the token counts of the first real reading (5,360 in / 726 out).
+// Usage: node scripts/mock-anthropic.mjs   (port 9999), with ANTHROPIC_BASE_URL=http://127.0.0.1:9999 in .dev.vars
+import { createServer } from 'node:http';
+
+const receipt = {
+  receipts: [{
+    document_type: 'till_slip', merchant: 'Greenvale', date: '2026-10-18', currency: 'USD', total: 2.6, payment_method: 'Cash',
+    printed_exchange_rate: null, category: 'Personal Care', confidence: 'high', notes: null,
+    items: [
+      { raw_text: 'LIL LETS SUPER 10S', name: 'Sanitary pads, Lil-Lets Super, 10', quantity: 1, amount: 1.3, category: 'Personal Care' },
+      { raw_text: 'LIL LETS SUPER PLUS 10S', name: 'Sanitary pads, Lil-Lets Super Plus, 10', quantity: 1, amount: 1.3, category: 'Personal Care' },
+    ],
+  }],
+};
+
+createServer((req, res) => {
+  let body = '';
+  req.on('data', (c) => (body += c));
+  req.on('end', () => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      id: 'msg_mock', type: 'message', role: 'assistant', model: 'claude-haiku-5-5',
+      content: [{ type: 'text', text: JSON.stringify(receipt) }],
+      stop_reason: 'end_turn', stop_sequence: null,
+      usage: { input_tokens: 5360, output_tokens: 726 },
+    }));
+  });
+}).listen(9999, '127.0.0.1', () => console.log('mock Anthropic on :9999'));

@@ -7,16 +7,16 @@ export function Button({
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'ghost' }) {
   const styles = {
-    primary: 'bg-teal-700 text-white hover:bg-teal-800 disabled:bg-stone-300',
-    secondary: 'bg-white text-stone-800 border border-stone-300 hover:bg-stone-100 disabled:text-stone-400',
-    danger: 'bg-white text-red-700 border border-red-300 hover:bg-red-50',
+    primary: 'bg-teal-700 text-white hover:bg-teal-600 disabled:bg-stone-300',
+    secondary: 'bg-surface text-stone-800 border border-stone-300 hover:bg-stone-100 disabled:text-stone-400',
+    danger: 'bg-surface text-red-700 border border-red-300 hover:bg-red-50',
     ghost: 'text-teal-800 hover:bg-teal-50',
   }[variant];
   return <button className={`rounded-lg px-4 py-2.5 text-base font-medium transition ${styles} ${className}`} {...props} />;
 }
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-xl border border-stone-200 bg-white p-4 shadow-sm ${className}`}>{children}</div>;
+  return <div className={`rounded-xl border border-stone-200 bg-surface p-4 shadow-sm ${className}`}>{children}</div>;
 }
 
 export function Money({ cents, currency = 'USD', className = '' }: { cents: number | null | undefined; currency?: string; className?: string }) {
