@@ -47,6 +47,15 @@ Choose any word or phrase and give it to the people you want to sign up.
 
 ## 6. Publish
 
+Publishing is automatic: Cloudflare Workers Builds is connected to `gitg777/Budget-ReceiptTracker`, and
+every push to `main` runs `npm run build` then `npx wrangler deploy`. Progress shows under
+Workers & Pages → budget-receipttracker → Deployments.
+
+If pushes stop producing builds (for example after the repository is renamed), go to
+Settings → Build → Git repository, Disconnect, then connect the repository again and push a commit.
+
+To publish by hand from a computer instead:
+
 ```
 npm run deploy
 ```
