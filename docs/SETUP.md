@@ -15,7 +15,7 @@ npx wrangler login
 
 ## 2. Database — done
 
-The `budget-db` database was created on 18 Oct 2026 (Western Europe) and its tables are in place; its id is already in `wrangler.jsonc`. Future table changes are applied with `npm run migrate:remote`.
+The `budget-db` database was created on 18 Oct 2026 (Western Europe) and its tables are in place; its id is already in `wrangler.jsonc`. Migrations 0001–0003 are applied (0003, long receipts and feedback, on 19 Oct 2026). Future table changes are applied with `npm run migrate:remote` before the code that needs them is published.
 
 ## 3. Create the photo storage
 
